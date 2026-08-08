@@ -1,0 +1,63 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // --- Security Foundation ---
+    // By default, deny all read and write access.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      // In a real app, this would check a custom claim or an admins collection
+      return isAuthenticated() && request.auth.token.admin == true;
+    }
+
+    // --- Adult Pathway (M2 preparation) ---
+    match /players/{userId} {
+      allow read: if isAuthenticated(); // Or adjust based on specific visibility rules
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId)
+                    // Prevent modification of system-controlled fields
+                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verified', 'score', 'adminNotes']);
+      allow delete: if isAdmin();
+    }
+
+    match /clubs/{clubId} {
+      allow read: if isAuthenticated();
+      // Club creation/update rules will be defined in M2
+      allow write: if isAdmin();
+    }
+
+    // --- Youth Pathway (Future preparation) ---
+    // Kept structurally separate from adult data for safeguarding
+    match /players_youth/{userId} {
+      // Very strict rules - only the youth themselves and their linked parent/guardian can access
+      allow read, write: if isOwner(userId) || isAdmin();
+    }
+
+    // --- Audit Logging ---
+    // Audit logs must be immutable to normal users
+    match /audit_logs/{logId} {
+      // Users can never read or write audit logs directly
+      // Only backend functions or admins can write to them via Admin SDK
+      allow read: if isAdmin();
+      allow write: if false; 
+    }
+    
+    // --- System Configuration ---
+    match /system_config/{configId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+  }
+}

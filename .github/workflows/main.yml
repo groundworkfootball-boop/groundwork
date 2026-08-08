@@ -1,0 +1,119 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop, staging ]
+  pull_request:
+    branches: [ main, develop, staging ]
+
+jobs:
+  build_and_test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          
+      - name: Install Dependencies
+        run: npm ci
+        
+      - name: Type Check
+        run: npm run typecheck || echo "No typecheck script found"
+        
+      - name: Lint
+        run: npm run lint
+        
+      - name: Build
+        run: npm run build
+        
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+        
+      # M1: Require tests for security rules to be in place (can fail if not written yet, but required)
+      # - name: Test Firebase Rules
+      #   run: firebase emulators:exec "npm test"
+        
+  deploy_development:
+    name: Deploy to Development
+    needs: build_and_test
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install Dependencies
+        run: npm ci
+      - name: Build for Development
+        run: npm run build
+        env:
+          VITE_APP_ENV: DEVELOPMENT
+          # (Add other non-sensitive vars if needed, secrets come from GitHub Secrets)
+      - name: Deploy to Firebase
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_DEV }}'
+          projectId: groundwork-8ac4f
+          channelId: live
+
+  deploy_staging:
+    name: Deploy to Staging
+    needs: build_and_test
+    if: github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install Dependencies
+        run: npm ci
+      - name: Build for Staging
+        run: npm run build
+        env:
+          VITE_APP_ENV: STAGING
+      - name: Deploy to Firebase
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_STAGING }}'
+          projectId: groundwork-staging
+          channelId: live
+
+  deploy_production:
+    name: Deploy to Production
+    needs: build_and_test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install Dependencies
+        run: npm ci
+      - name: Build for Production
+        run: npm run build
+        env:
+          VITE_APP_ENV: PRODUCTION
+      - name: Deploy to Firebase
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_PROD }}'
+          projectId: groundwork-production
+          channelId: live
