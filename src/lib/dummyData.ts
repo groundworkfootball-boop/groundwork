@@ -1,4 +1,4 @@
-import { PlayerProfile, ClubPreferences } from './scoringEngine';
+import type { PlayerProfile, ClubPreferences } from './scoringEngine';
 
 export const DUMMY_CLUBS = [
   {

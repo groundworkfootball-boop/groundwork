@@ -1,19 +1,24 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth, type Role } from '../../context/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 import { ArrowRight } from 'lucide-react';
 
 export const Login = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const [role, setRole] = useState<Role>('player');
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    login(role);
-    navigate('/');
+    try {
+      await login(email, password);
+      navigate('/');
+    } catch (error) {
+      console.error('Login error:', error);
+      alert('Login failed. Please check your credentials.');
+    }
   };
 
   return (
@@ -30,25 +35,7 @@ export const Login = () => {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-xs font-bold text-text-secondary tracking-widest uppercase mb-2">Login As (Mock)</label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['player', 'club', 'admin'] as Role[]).map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setRole(r)}
-                  className={`py-2 text-xs font-bold uppercase rounded border transition-colors ${
-                    role === r 
-                    ? 'bg-brand/10 border-brand text-brand' 
-                    : 'border-dark-border text-text-secondary hover:border-text-secondary/50'
-                  }`}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
-          </div>
+
 
           <div>
             <label className="block text-xs font-bold text-text-secondary tracking-widest uppercase mb-2">Email Address</label>

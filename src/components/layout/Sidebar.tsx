@@ -38,7 +38,7 @@ const navigation: NavItem[] = [
 
 export const Sidebar = () => {
   const { role, user, logout } = useAuth();
-  const filteredNav = navigation.filter(item => item.roles.includes(role));
+  const filteredNav = navigation.filter(item => role && item.roles.includes(role));
 
   return (
     <aside className="w-64 bg-dark-surface border-r border-dark-border flex flex-col h-screen sticky top-0">
