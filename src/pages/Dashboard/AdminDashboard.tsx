@@ -1,9 +1,11 @@
 import { ShieldAlert, Server, Users, Activity } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 export const AdminDashboard = () => {
+  const { user } = useAuth();
   return (
     <div className="max-w-6xl mx-auto">
-      <h3 className="text-3xl font-bold mb-8 tracking-tight">System Admin</h3>
+      <h3 className="text-3xl font-bold mb-8 tracking-tight">System Admin - {user?.name || 'Administrator'}</h3>
       
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         <div className="bg-dark-surface p-4 rounded-xl border border-dark-border">

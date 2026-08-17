@@ -54,15 +54,11 @@ export const Register = () => {
   const handleFinalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // In a real implementation, you would pass the youth data as well
-      // register(email, password, role, name, isYouth ? { dob, guardianName, guardianEmail } : { dob });
       await register(email, password, role, name);
       navigate('/');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Registration failed:", error);
-      // Fallback for mock environment
-      login(email, password);
-      navigate('/');
+      alert(error.message || "Registration failed. Please try again.");
     }
   };
 

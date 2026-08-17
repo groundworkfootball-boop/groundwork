@@ -1,7 +1,9 @@
 import { Users, FileText, Star, BrainCircuit, ArrowRight, ShieldAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 
 export const ClubDashboard = () => {
+  const { user } = useAuth();
   // Mock data representing AI Squad Gap Analysis from Section 6.1
   const squadGaps = [
     {
@@ -22,7 +24,7 @@ export const ClubDashboard = () => {
     <div className="max-w-6xl mx-auto pb-20">
       <div className="flex justify-between items-center mb-8">
         <div>
-          <h3 className="text-3xl font-black tracking-tight uppercase">Club Command</h3>
+          <h3 className="text-3xl font-black tracking-tight uppercase">{user?.name || 'Club'} Command</h3>
           <p className="text-text-secondary text-sm mt-1">Manage squad, scout players, and analyze gaps.</p>
         </div>
         <button className="px-6 py-3 bg-brand text-dark-bg font-bold uppercase tracking-wider rounded hover:bg-brand-hover transition-transform active:scale-[0.98] shadow-[0_0_15px_rgba(204,255,0,0.2)]">

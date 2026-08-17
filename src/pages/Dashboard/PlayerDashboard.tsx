@@ -1,7 +1,10 @@
 import { Eye, BarChart2, CheckCircle2, ChevronRight, Bell } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 
 export const PlayerDashboard = () => {
+  const { user } = useAuth();
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Top Banner Alert */}
@@ -9,8 +12,8 @@ export const PlayerDashboard = () => {
         <div className="flex items-center space-x-3">
           <Bell className="w-5 h-5 text-brand" />
           <div>
-            <p className="font-bold text-sm">New Trial Invitation!</p>
-            <p className="text-xs text-text-secondary">North City FC has invited you to an open trial this Saturday.</p>
+            <p className="font-bold text-sm">Welcome back, {user?.name || 'Player'}!</p>
+            <p className="text-xs text-text-secondary">Ready to get seen? Keep your profile updated for the best matches.</p>
           </div>
         </div>
         <Link to="/trial-manager" className="px-4 py-2 bg-brand text-dark-bg text-xs font-bold rounded hover:bg-brand-hover transition-colors">
