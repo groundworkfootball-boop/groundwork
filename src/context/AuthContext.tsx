@@ -1,72 +1,100 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { auth, db } from '../lib/firebase';
-import { 
-  onAuthStateChanged, 
-  signInWithEmailAndPassword, 
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signOut as firebaseSignOut
+  signOut as firebaseSignOut,
+  sendPasswordResetEmail,
+  sendEmailVerification,
+  type User as FirebaseUser,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 export type Role = 'player' | 'club' | 'admin';
+
+export interface AppUser {
+  uid: string;
+  email: string | null;
+  role: Role;
+  name: string;
+  emailVerified: boolean;
+  [key: string]: unknown;
+}
 
 interface AuthContextType {
   role: Role | null;
   isAuthenticated: boolean;
-  user: any | null;
+  user: AppUser | null;
+  firebaseUser: FirebaseUser | null;
   loading: boolean;
   login: (email: string, pass: string) => Promise<void>;
-  register: (email: string, pass: string, role: Role, name: string) => Promise<void>;
+  register: (email: string, pass: string, role: Role, name: string, extra?: Record<string, unknown>) => Promise<void>;
   logout: () => Promise<void>;
+  sendReset: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [role, setRole] = useState<Role | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [user, setUser] = useState<any | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState<AppUser | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser) {
+        setFirebaseUser(fbUser);
         try {
-          let userDocRef = doc(db, 'players', firebaseUser.uid);
-          let userDoc = await getDoc(userDocRef);
-          let currentRole: Role = 'player';
-          
-          if (!userDoc.exists()) {
-            userDocRef = doc(db, 'clubs', firebaseUser.uid);
-            userDoc = await getDoc(userDocRef);
-            currentRole = 'club';
-          }
-          
-          if (userDoc.exists()) {
-            setRole(currentRole);
-            setUser({ uid: firebaseUser.uid, email: firebaseUser.email, ...userDoc.data() });
+          const userRef = doc(db, 'users', fbUser.uid);
+          const userSnap = await getDoc(userRef);
+
+          if (userSnap.exists()) {
+            const data = userSnap.data();
+            const userRole: Role = data.role ?? 'player';
+            setRole(userRole);
+            setUser({
+              uid: fbUser.uid,
+              email: fbUser.email,
+              emailVerified: fbUser.emailVerified,
+              name: data.name ?? data.displayName ?? fbUser.email ?? 'User',
+              role: userRole,
+              ...data,
+            });
             setIsAuthenticated(true);
           } else {
-            // Check for admin or fallback
-            // In a real app, admins might have claims, but for now we fallback
-            setRole('admin');
+            // No user doc — set basic authenticated state
+            setRole('player');
+            setUser({
+              uid: fbUser.uid,
+              email: fbUser.email,
+              emailVerified: fbUser.emailVerified,
+              name: fbUser.displayName ?? fbUser.email ?? 'User',
+              role: 'player',
+            });
             setIsAuthenticated(true);
-            setUser({ uid: firebaseUser.uid, email: firebaseUser.email });
           }
-        } catch (error) {
-          console.error("Error fetching user role:", error);
-          // Fallback if firestore rules prevent read or it fails
+        } catch (err) {
+          console.error('Error fetching user profile:', err);
           setIsAuthenticated(true);
-          setUser({ uid: firebaseUser.uid, email: firebaseUser.email });
+          setUser({
+            uid: fbUser.uid,
+            email: fbUser.email,
+            emailVerified: fbUser.emailVerified,
+            name: fbUser.email ?? 'User',
+            role: 'player',
+          });
         }
       } else {
+        setFirebaseUser(null);
         setRole(null);
         setUser(null);
         setIsAuthenticated(false);
       }
       setLoading(false);
     });
-
     return () => unsubscribe();
   }, []);
 
@@ -74,33 +102,95 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await signInWithEmailAndPassword(auth, email, pass);
   };
 
-  const register = async (email: string, pass: string, selectedRole: Role, name: string) => {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
-    const collection = selectedRole === 'club' ? 'clubs' : 'players';
-    
-    await setDoc(doc(db, collection, userCredential.user.uid), {
-      name,
+  const register = async (
+    email: string,
+    pass: string,
+    selectedRole: Role,
+    name: string,
+    extra?: Record<string, unknown>,
+  ) => {
+    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    const uid = cred.user.uid;
+
+    const isYouth = extra?.isYouth === true;
+
+    // Write to users collection (source of role truth)
+    await setDoc(doc(db, 'users', uid), {
+      uid,
       email,
+      name,
       role: selectedRole,
-      createdAt: new Date().toISOString()
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      emailVerified: false,
+      disabled: false,
     });
+
+    // Write role-specific document
+    if (selectedRole === 'player') {
+      await setDoc(doc(db, 'players', uid), {
+        uid,
+        email,
+        name,
+        role: 'player',
+        isYouth,
+        searchable: !isYouth,
+        consentStatus: isYouth ? 'pending' : 'n/a',
+        profileComplete: 0,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        ...(isYouth && extra?.dob ? { dob: extra.dob } : {}),
+      });
+
+      // Youth safeguarding: create a youthProfiles record
+      if (isYouth && extra) {
+        await setDoc(doc(db, 'youthProfiles', uid), {
+          playerId: uid,
+          guardianName: extra.guardianName ?? '',
+          guardianEmail: extra.guardianEmail ?? '',
+          relationship: extra.relationship ?? '',
+          consentStatus: 'pending',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+    } else if (selectedRole === 'club') {
+      await setDoc(doc(db, 'clubs', uid), {
+        uid,
+        email,
+        name,
+        role: 'club',
+        verificationStatus: 'pending',
+        verifiedAdult: false,
+        verifiedYouth: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    // Send verification email (non-blocking)
+    sendEmailVerification(cred.user).catch(console.warn);
   };
 
   const logout = async () => {
     await firebaseSignOut(auth);
   };
 
+  const sendReset = async (email: string) => {
+    await sendPasswordResetEmail(auth, email);
+  };
+
   return (
-    <AuthContext.Provider value={{ role, isAuthenticated, user, loading, login, register, logout }}>
+    <AuthContext.Provider
+      value={{ role, isAuthenticated, user, firebaseUser, loading, login, register, logout, sendReset }}
+    >
       {!loading && children}
     </AuthContext.Provider>
   );
 };
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
 };

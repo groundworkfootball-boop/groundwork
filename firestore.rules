@@ -2,62 +2,179 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // --- Security Foundation ---
-    // By default, deny all read and write access.
+    // ─── Security Foundation ─────────────────────────────────────────────
+    // Deny everything by default
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Helper functions
+    // ─── Helper Functions ─────────────────────────────────────────────────
     function isAuthenticated() {
       return request.auth != null;
     }
-    
+
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
     function isAdmin() {
-      // In a real app, this would check a custom claim or an admins collection
-      return isAuthenticated() && request.auth.token.admin == true;
+      // Role stored in users/{uid}.role field
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // --- Adult Pathway (M2 preparation) ---
-    match /players/{userId} {
-      allow read: if isAuthenticated(); // Or adjust based on specific visibility rules
+    function isClub() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'club';
+    }
+
+    function isPlayer() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'player';
+    }
+
+    function isNotDisabled() {
+      return !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('disabled', false);
+    }
+
+    // ─── Users ──────────────────────────────────────────────────────────
+    // Any authenticated user can read their own document; admins can read all
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId);
-      allow update: if isOwner(userId)
-                    // Prevent modification of system-controlled fields
-                    && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verified', 'score', 'adminNotes']);
+      allow update: if (isOwner(userId) && 
+                    !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'disabled']))
+                   || isAdmin();
       allow delete: if isAdmin();
     }
 
+    // ─── Player Profiles ─────────────────────────────────────────────────
+    match /players/{userId} {
+      // Clubs can read searchable adult players; players read their own
+      allow read: if isOwner(userId) || isAdmin() ||
+                  (isClub() && resource.data.searchable == true && resource.data.get('isYouth', false) == false);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) && 
+                    !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verified', 'adminNotes', 'score']);
+      allow delete: if isAdmin();
+    }
+
+    // ─── Club Profiles ───────────────────────────────────────────────────
     match /clubs/{clubId} {
       allow read: if isAuthenticated();
-      // Club creation/update rules will be defined in M2
-      allow write: if isAdmin();
+      allow create: if isOwner(clubId);
+      allow update: if isOwner(clubId) && 
+                    !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verificationStatus', 'verifiedAdult', 'verifiedYouth', 'adminNotes'])
+                   || isAdmin();
+      allow delete: if isAdmin();
     }
 
-    // --- Youth Pathway (Future preparation) ---
-    // Kept structurally separate from adult data for safeguarding
-    match /players_youth/{userId} {
-      // Very strict rules - only the youth themselves and their linked parent/guardian can access
-      allow read, write: if isOwner(userId) || isAdmin();
+    // ─── Youth Profiles (Safeguarding-Critical) ──────────────────────────
+    match /youthProfiles/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId);
+      // Only allow consent status update for the player themselves
+      allow update: if isOwner(userId) ||
+                    // Allow guardian consent updates only through Cloud Functions (via Admin SDK)
+                    isAdmin();
+      allow delete: if isAdmin();
     }
 
-    // --- Audit Logging ---
-    // Audit logs must be immutable to normal users
-    match /audit_logs/{logId} {
-      // Users can never read or write audit logs directly
-      // Only backend functions or admins can write to them via Admin SDK
+    // ─── Opportunities ───────────────────────────────────────────────────
+    match /opportunities/{oppId} {
+      allow read: if isAuthenticated();
+      allow create: if isClub() && request.resource.data.clubId == request.auth.uid;
+      allow update: if isClub() && resource.data.clubId == request.auth.uid;
+      allow delete: if (isClub() && resource.data.clubId == request.auth.uid) || isAdmin();
+    }
+
+    // ─── Applications ────────────────────────────────────────────────────
+    match /applications/{appId} {
+      // Players read their own applications; clubs read applications to their opportunities
+      allow read: if isAuthenticated() && (
+                    resource.data.playerId == request.auth.uid ||
+                    resource.data.clubId == request.auth.uid ||
+                    isAdmin()
+                  );
+      // Players create applications
+      allow create: if isPlayer() && request.resource.data.playerId == request.auth.uid;
+      // Clubs can update status; players cannot modify after submission
+      allow update: if (isClub() && resource.data.clubId == request.auth.uid &&
+                    request.resource.data.diff(resource.data).affectedKeys().hasAll(['status', 'updatedAt'])) ||
+                   isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Shortlists ──────────────────────────────────────────────────────
+    match /shortlists/{shortlistId} {
+      allow read: if isAuthenticated() && resource.data.clubId == request.auth.uid || isAdmin();
+      allow create: if isClub() && request.resource.data.clubId == request.auth.uid;
+      allow update: if isClub() && resource.data.clubId == request.auth.uid;
+      allow delete: if (isClub() && resource.data.clubId == request.auth.uid) || isAdmin();
+    }
+
+    // ─── Trials ──────────────────────────────────────────────────────────
+    match /trials/{trialId} {
+      allow read: if isAuthenticated() && (
+                    resource.data.get('clubId', '') == request.auth.uid ||
+                    resource.data.get('playerId', '') == request.auth.uid ||
+                    isAdmin()
+                  );
+      allow create: if isClub() && request.resource.data.clubId == request.auth.uid;
+      allow update: if (isClub() && resource.data.clubId == request.auth.uid) || isAdmin();
+      allow delete: if (isClub() && resource.data.clubId == request.auth.uid) || isAdmin();
+    }
+
+    // ─── Notifications ───────────────────────────────────────────────────
+    match /notifications/{notifId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      // Notifications created only by Cloud Functions (Admin SDK) or admin
+      allow create: if isAdmin();
+      // Users can mark their own notifications as read
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid &&
+                    request.resource.data.diff(resource.data).affectedKeys().hasAll(['read']);
+      allow delete: if isAdmin();
+    }
+
+    // ─── Audit Logs (Immutable to normal users) ──────────────────────────
+    match /auditLogs/{logId} {
       allow read: if isAdmin();
-      allow write: if false; 
+      // Audit logs written exclusively via Cloud Functions / Admin SDK
+      allow write: if false;
     }
-    
-    // --- System Configuration ---
-    match /system_config/{configId} {
+
+    // ─── Consent Audit Trail ─────────────────────────────────────────────
+    match /consentAudit/{logId} {
+      allow read: if isAdmin();
+      allow write: if false; // Only via Admin SDK
+    }
+
+    // ─── System Configuration ─────────────────────────────────────────────
+    match /systemConfig/{configId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    // ─── Club Verification Requests ──────────────────────────────────────
+    match /clubVerificationRequests/{reqId} {
+      allow read: if isOwner(reqId) || isAdmin();
+      allow create: if isClub() && request.resource.data.clubId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Match Results (pre-computed scores) ─────────────────────────────
+    match /matchResults/{resultId} {
+      allow read: if isAuthenticated() && (
+                    resource.data.playerId == request.auth.uid ||
+                    resource.data.clubId == request.auth.uid ||
+                    isAdmin()
+                  );
+      // Only written by Cloud Functions
+      allow write: if false;
     }
   }
 }

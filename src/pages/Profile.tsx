@@ -1,36 +1,104 @@
-import { useState } from 'react';
-import { ChevronLeft, Play, Maximize, MapPin, Eye, Edit2, Save, X, Camera, Plus, Trash2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ChevronLeft, MapPin, Eye, EyeOff, Edit2, Save, X, Camera, Plus, Trash2, Loader2, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useToast } from '../lib/toast';
+import { db } from '../lib/firebase';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+
+interface ExperienceEntry {
+  id: number;
+  period: string;
+  team: string;
+  league: string;
+}
+
+interface PlayerProfileData {
+  name?: string;
+  location?: string;
+  preferredFoot?: string;
+  positions?: string[];
+  ageGroup?: string;
+  height?: number;
+  weight?: number;
+  topSpeed?: number;
+  matchesPerWeek?: number;
+  avgMinsPlayed?: number;
+  tacticalTendencies?: string[];
+  experience?: ExperienceEntry[];
+  searchable?: boolean;
+  isYouth?: boolean;
+  consentStatus?: string;
+  [key: string]: unknown;
+}
+
+function computeCompleteness(data: PlayerProfileData): number {
+  let score = 0;
+  if (data.name) score += 10;
+  if (data.location) score += 5;
+  if (data.positions?.length) score += 20;
+  if (data.preferredFoot) score += 5;
+  if (data.height) score += 5;
+  if (data.weight) score += 5;
+  if (data.experience?.length) score += 15;
+  if (data.tacticalTendencies?.length) score += 10;
+  if (data.topSpeed) score += 5;
+  if (data.matchesPerWeek) score += 5;
+  if (data.avgMinsPlayed) score += 5;
+  if (data.ageGroup) score += 5;
+  if (data.searchable !== undefined) score += 5;
+  return Math.min(score / 100, 1);
+}
 
 export const Profile = () => {
-  const { role } = useAuth();
+  const { user, role } = useAuth();
+  const { success, error: toastError } = useToast();
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [profileData, setProfileData] = useState({
-    name: 'Marcus Thorne',
-    location: 'North West',
-    preferredFoot: 'Right Foot',
-    positions: ['RWB', 'LWB'],
-    ageGroup: 'U23',
-    rating: 94,
-    status: 'High Visibility',
-    height: 184,
-    weight: 78,
-    topSpeed: 34.2,
-    matchesPerWeek: 2,
-    avgMinsPlayed: 88,
-    tacticalTendencies: ['Overlapping', 'High Intensity', 'Box-To-Box'],
-    experience: [
-      { id: 1, period: '2023 - Present', team: 'FC United', league: 'National League North (Step 2)' },
-      { id: 2, period: '2021 - 2023', team: 'City Academy', league: 'U18 / U23 Squad' },
-    ],
-  });
+  const [profileData, setProfileData] = useState<PlayerProfileData>({});
+  const [editForm, setEditForm] = useState<PlayerProfileData>({});
 
-  const [editForm, setEditForm] = useState(profileData);
+  useEffect(() => {
+    if (!user?.uid) return;
+    const load = async () => {
+      setLoading(true);
+      setFetchError(null);
+      try {
+        const collection = role === 'club' ? 'clubs' : 'players';
+        const snap = await getDoc(doc(db, collection, user.uid));
+        const data: PlayerProfileData = snap.exists() ? (snap.data() as PlayerProfileData) : { name: user.name };
+        setProfileData(data);
+        setEditForm(data);
+      } catch (err) {
+        console.error('Profile load error:', err);
+        setFetchError('Failed to load profile. Please refresh.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [user?.uid, role]);
 
-  const handleSave = () => {
-    setProfileData(editForm);
-    setIsEditing(false);
+  const handleSave = async () => {
+    if (!user?.uid) return;
+    setSaving(true);
+    try {
+      const collection = role === 'club' ? 'clubs' : 'players';
+      const completeness = computeCompleteness(editForm);
+      const dataToSave = { ...editForm, profileComplete: completeness, updatedAt: serverTimestamp() };
+      await setDoc(doc(db, collection, user.uid), dataToSave, { merge: true });
+      setProfileData(dataToSave);
+      setIsEditing(false);
+      success('Profile saved successfully!');
+    } catch (err) {
+      console.error('Profile save error:', err);
+      toastError('Failed to save profile. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCancel = () => {
@@ -38,77 +106,99 @@ export const Profile = () => {
     setIsEditing(false);
   };
 
-  const handleInputChange = (field: string, value: string | number) => {
-    setEditForm(prev => ({ ...prev, [field]: value }));
+  const handleInput = (field: string, value: string | number | boolean) => {
+    setEditForm((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleArrayInput = (field: 'positions' | 'tacticalTendencies', value: string) => {
-    const array = value.split(',').map(item => item.trim()).filter(Boolean);
-    setEditForm(prev => ({ ...prev, [field]: array }));
+    const arr = value.split(',').map((s) => s.trim()).filter(Boolean);
+    setEditForm((prev) => ({ ...prev, [field]: arr }));
   };
-  
-  const handleExperienceChange = (id: number, field: string, value: string) => {
-    setEditForm(prev => ({
+
+  const handleExpChange = (id: number, field: string, value: string) => {
+    setEditForm((prev) => ({
       ...prev,
-      experience: prev.experience.map(exp => 
-        exp.id === id ? { ...exp, [field]: value } : exp
-      )
+      experience: (prev.experience ?? []).map((e) => (e.id === id ? { ...e, [field]: value } : e)),
     }));
   };
 
-  const addExperience = () => {
-    setEditForm(prev => ({
+  const addExp = () =>
+    setEditForm((prev) => ({
       ...prev,
-      experience: [
-        { id: Date.now(), period: '', team: '', league: '' },
-        ...prev.experience,
-      ]
+      experience: [{ id: Date.now(), period: '', team: '', league: '' }, ...(prev.experience ?? [])],
     }));
-  };
 
-  const removeExperience = (id: number) => {
-    setEditForm(prev => ({
+  const removeExp = (id: number) =>
+    setEditForm((prev) => ({
       ...prev,
-      experience: prev.experience.filter(exp => exp.id !== id)
+      experience: (prev.experience ?? []).filter((e) => e.id !== id),
     }));
-  };
 
   const canEdit = role === 'player' || role === 'admin';
+  const inputCls =
+    'w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-brand transition-colors';
 
-  const inputClass = "w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-brand transition-colors";
-  
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-8 h-8 text-brand animate-spin" />
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="max-w-7xl mx-auto">
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 flex items-center space-x-3">
+          <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+          <p className="text-red-400 text-sm">{fetchError}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const displayData = isEditing ? editForm : profileData;
+  const completeness = Math.round(computeCompleteness(profileData) * 100);
+  const circumference = 2 * Math.PI * 44;
+  const dashOffset = circumference - (circumference * completeness) / 100;
+
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-20">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <Link to="/opportunities" className="inline-flex items-center space-x-2 text-xs font-bold text-text-secondary uppercase tracking-widest hover:text-text-primary transition-colors">
+        <Link
+          to="/dashboard"
+          className="inline-flex items-center space-x-2 text-xs font-bold text-text-secondary uppercase tracking-widest hover:text-text-primary transition-colors"
+        >
           <ChevronLeft className="w-4 h-4" />
-          <span>Back to Opportunities</span>
+          <span>Back to Dashboard</span>
         </Link>
-        
+
         {canEdit && (
           <div>
             {!isEditing ? (
-              <button 
+              <button
                 onClick={() => setIsEditing(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-dark-surface border border-dark-border rounded-lg text-sm font-bold hover:border-brand/50 hover:text-brand transition-colors w-full sm:w-auto justify-center"
+                className="flex items-center space-x-2 px-4 py-2 bg-dark-surface border border-dark-border rounded-lg text-sm font-bold hover:border-brand/50 hover:text-brand transition-colors"
               >
                 <Edit2 className="w-4 h-4" />
                 <span>Edit Profile</span>
               </button>
             ) : (
-              <div className="flex space-x-3 w-full sm:w-auto">
-                <button 
+              <div className="flex space-x-3">
+                <button
                   onClick={handleCancel}
-                  className="flex-1 sm:flex-none flex items-center justify-center space-x-2 px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-sm font-bold hover:bg-dark-surface transition-colors"
+                  className="flex items-center space-x-2 px-4 py-2 bg-dark-bg border border-dark-border rounded-lg text-sm font-bold hover:bg-dark-surface transition-colors"
                 >
                   <X className="w-4 h-4" />
                   <span>Cancel</span>
                 </button>
-                <button 
+                <button
                   onClick={handleSave}
-                  className="flex-1 sm:flex-none flex items-center justify-center space-x-2 px-4 py-2 bg-brand text-dark-bg rounded-lg text-sm font-bold hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(204,255,0,0.3)]"
+                  disabled={saving}
+                  className="flex items-center space-x-2 px-4 py-2 bg-brand text-dark-bg rounded-lg text-sm font-bold hover:bg-brand-hover transition-colors shadow-[0_0_15px_rgba(204,255,0,0.3)] disabled:opacity-60"
                 >
-                  <Save className="w-4 h-4" />
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                   <span>Save</span>
                 </button>
               </div>
@@ -121,349 +211,261 @@ export const Profile = () => {
         {/* Left/Main Column */}
         <div className="lg:col-span-2 space-y-6">
           {/* Header Card */}
-          <div className="bg-dark-surface border border-dark-border rounded-xl p-6 relative overflow-hidden transition-all duration-300">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-brand/5 blur-[80px] rounded-full pointer-events-none"></div>
-            
+          <div className="bg-dark-surface border border-dark-border rounded-xl p-6 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-brand/5 blur-[80px] rounded-full pointer-events-none" />
+
             <div className="flex flex-col sm:flex-row justify-between items-start gap-6 relative z-10">
               <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-6 w-full">
-                <div className="relative group w-32 h-32 bg-dark-bg border-2 border-dark-border rounded-lg overflow-hidden shrink-0 shadow-xl self-center sm:self-auto">
-                   <div className="w-full h-full bg-gradient-to-br from-dark-border to-dark-bg flex items-center justify-center">
-                      <span className="text-4xl font-black text-text-secondary">{profileData.name.charAt(0)}</span>
-                   </div>
-                   {isEditing && (
-                     <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                       <Camera className="w-8 h-8 text-white mb-1" />
-                       <span className="text-[10px] font-bold text-white uppercase tracking-wider">Change</span>
-                     </div>
-                   )}
+                {/* Avatar */}
+                <div className="relative group w-28 h-28 bg-dark-bg border-2 border-dark-border rounded-lg overflow-hidden shrink-0 shadow-xl self-center sm:self-auto">
+                  <div className="w-full h-full bg-gradient-to-br from-dark-border to-dark-bg flex items-center justify-center">
+                    <span className="text-4xl font-black text-text-secondary">
+                      {(displayData.name || user?.name || 'U').charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  {isEditing && (
+                    <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                      <Camera className="w-8 h-8 text-white mb-1" />
+                      <span className="text-[10px] font-bold text-white uppercase tracking-wider">Change</span>
+                    </div>
+                  )}
                 </div>
-                
-                <div className="space-y-4 flex-1 w-full">
+
+                {/* Name & Info */}
+                <div className="space-y-3 flex-1 w-full">
                   {isEditing ? (
                     <div className="space-y-3 bg-dark-bg/50 p-4 rounded-lg border border-dark-border/50">
                       <div>
-                        <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1">Player Name</label>
-                        <input 
-                          type="text" 
-                          value={editForm.name} 
-                          onChange={(e) => handleInputChange('name', e.target.value)}
-                          className={`${inputClass} text-lg font-black uppercase tracking-tight py-2`}
-                          placeholder="Player Name"
-                        />
+                        <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1">Name</label>
+                        <input type="text" value={displayData.name ?? ''} onChange={(e) => handleInput('name', e.target.value)} className={`${inputCls} text-lg font-black uppercase`} placeholder="Your name" />
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1">Location</label>
-                          <input 
-                            type="text" 
-                            value={editForm.location} 
-                            onChange={(e) => handleInputChange('location', e.target.value)}
-                            className={inputClass}
-                            placeholder="Location"
-                          />
+                          <input type="text" value={displayData.location ?? ''} onChange={(e) => handleInput('location', e.target.value)} className={inputCls} placeholder="Region" />
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1">Preferred Foot</label>
-                          <input 
-                            type="text" 
-                            value={editForm.preferredFoot} 
-                            onChange={(e) => handleInputChange('preferredFoot', e.target.value)}
-                            className={inputClass}
-                            placeholder="Preferred Foot"
-                          />
+                          <select value={displayData.preferredFoot ?? ''} onChange={(e) => handleInput('preferredFoot', e.target.value)} className={inputCls}>
+                            <option value="">Select</option>
+                            <option>Right Foot</option>
+                            <option>Left Foot</option>
+                            <option>Both Feet</option>
+                          </select>
                         </div>
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1">Positions (comma separated)</label>
-                        <input 
-                          type="text" 
-                          value={editForm.positions.join(', ')} 
-                          onChange={(e) => handleArrayInput('positions', e.target.value)}
-                          className={inputClass}
-                          placeholder="e.g. RWB, LWB, CB"
-                        />
+                        <label className="block text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-1">Positions (comma-separated)</label>
+                        <input type="text" value={(displayData.positions ?? []).join(', ')} onChange={(e) => handleArrayInput('positions', e.target.value)} className={inputCls} placeholder="e.g. CM, CDM, ST" />
                       </div>
+                      {role === 'player' && (
+                        <div className="flex items-center justify-between py-2 border-t border-dark-border/50 mt-2">
+                          <div>
+                            <p className="text-sm font-bold">Profile Visibility</p>
+                            <p className="text-xs text-text-secondary">Allow clubs to discover your profile</p>
+                          </div>
+                          <button
+                            onClick={() => handleInput('searchable', !displayData.searchable)}
+                            disabled={displayData.isYouth && displayData.consentStatus !== 'granted'}
+                            className={`relative w-12 h-6 rounded-full transition-colors ${displayData.searchable ? 'bg-brand' : 'bg-dark-border'} disabled:opacity-40 disabled:cursor-not-allowed`}
+                          >
+                            <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white transition-transform ${displayData.searchable ? 'translate-x-6' : 'translate-x-0'}`} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <>
-                      <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tight mb-2 text-center sm:text-left">{profileData.name}</h1>
-                      <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 text-sm text-text-secondary font-medium tracking-wide mb-4">
-                        <span className="flex items-center bg-dark-bg px-3 py-1.5 rounded-full border border-dark-border">
-                          <MapPin className="w-4 h-4 mr-2 text-brand" /> {profileData.location}
-                        </span>
-                        <span className="flex items-center bg-dark-bg px-3 py-1.5 rounded-full border border-dark-border">
-                          <svg className="w-4 h-4 mr-2 text-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> 
-                          {profileData.preferredFoot}
+                      <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tight">
+                        {displayData.name || user?.name || 'Complete Your Profile'}
+                      </h1>
+                      <div className="flex flex-wrap items-center gap-3 text-sm text-text-secondary">
+                        {displayData.location && (
+                          <span className="flex items-center bg-dark-bg px-3 py-1.5 rounded-full border border-dark-border">
+                            <MapPin className="w-4 h-4 mr-2 text-brand" />
+                            {displayData.location}
+                          </span>
+                        )}
+                        {displayData.preferredFoot && (
+                          <span className="bg-dark-bg px-3 py-1.5 rounded-full border border-dark-border">
+                            {displayData.preferredFoot}
+                          </span>
+                        )}
+                        <span className={`flex items-center px-3 py-1.5 rounded-full border ${displayData.searchable ? 'border-brand/30 text-brand' : 'border-dark-border text-text-secondary'}`}>
+                          {displayData.searchable ? <Eye className="w-4 h-4 mr-2" /> : <EyeOff className="w-4 h-4 mr-2" />}
+                          {displayData.searchable ? 'Visible' : 'Hidden'}
                         </span>
                       </div>
-                      <div className="flex flex-wrap justify-center sm:justify-start gap-2">
-                        {profileData.positions.map(pos => (
-                          <span key={pos} className="px-3 py-1 bg-brand/10 border border-brand/20 text-xs font-bold text-brand uppercase tracking-wider rounded">{pos}</span>
-                        ))}
-                      </div>
+                      {(displayData.positions ?? []).length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {(displayData.positions ?? []).map((pos) => (
+                            <span key={pos} className="px-3 py-1 bg-brand/10 border border-brand/20 text-xs font-bold text-brand uppercase tracking-wider rounded">
+                              {pos}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
               </div>
 
+              {/* Profile score circle */}
               {!isEditing && (
-                <div className="hidden sm:flex flex-col items-end space-y-4">
-                  <span className="px-2 py-1 bg-brand text-dark-bg text-xs font-bold uppercase tracking-widest rounded">{profileData.ageGroup}</span>
-                  <div className="border border-dark-border bg-dark-bg p-4 rounded-xl flex flex-col items-center justify-center shadow-lg">
-                    <div className="relative w-20 h-20 mb-2">
-                      <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-                        <circle cx="50" cy="50" r="44" fill="none" stroke="#2a3441" strokeWidth="8" />
-                        <circle cx="50" cy="50" r="44" fill="none" stroke="#ccff00" strokeWidth="8" strokeDasharray="276" strokeDashoffset={`${276 - (276 * profileData.rating) / 100}`} className="drop-shadow-[0_0_8px_rgba(204,255,0,0.5)] transition-all duration-1000" />
-                      </svg>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        <span className="text-2xl font-black text-brand leading-none">{profileData.rating}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center space-x-1.5">
-                       <div className="w-1.5 h-1.5 rounded-full bg-brand animate-pulse"></div>
-                       <span className="text-[8px] font-bold text-text-secondary uppercase tracking-widest whitespace-nowrap">{profileData.status}</span>
+                <div className="hidden sm:flex flex-col items-center shrink-0">
+                  <div className="relative w-20 h-20">
+                    <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="44" fill="none" stroke="#2a3441" strokeWidth="8" />
+                      <circle cx="50" cy="50" r="44" fill="none" stroke="#ccff00" strokeWidth="8" strokeDasharray={circumference} strokeDashoffset={dashOffset} className="drop-shadow-[0_0_8px_rgba(204,255,0,0.5)] transition-all duration-1000" />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-xl font-black text-brand">{completeness}</span>
+                      <span className="text-[8px] text-text-secondary font-bold">%</span>
                     </div>
                   </div>
+                  <span className="text-[9px] text-text-secondary font-bold uppercase tracking-widest mt-1">Complete</span>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Video Player */}
+          {/* Metrics */}
           <div className="bg-dark-surface border border-dark-border rounded-xl overflow-hidden">
-            <div className="flex justify-between items-center p-4 border-b border-dark-border">
-              <h3 className="text-lg font-bold tracking-tight uppercase">Match Highlights</h3>
-              {isEditing ? (
-                 <button className="text-xs font-bold text-brand uppercase tracking-wider hover:text-brand-hover flex items-center space-x-1">
-                   <Plus className="w-4 h-4" />
-                   <span>Add Video</span>
-                 </button>
-              ) : (
-                <button className="text-text-secondary hover:text-text-primary transition-colors">
-                  <Maximize className="w-5 h-5" />
-                </button>
-              )}
-            </div>
-            
-            <div className="relative aspect-video bg-dark-bg group cursor-pointer border-b border-dark-border overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-tr from-dark-surface to-dark-bg"></div>
-              
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20 flex flex-col justify-end z-10">
-                <div className="px-4 pb-4 w-full">
-                   <div className="h-1.5 w-full bg-white/20 rounded-full mb-2 relative overflow-hidden">
-                      <div className="absolute left-0 top-0 bottom-0 w-1/3 bg-brand rounded-full"></div>
-                   </div>
-                   <div className="flex justify-between items-center text-xs font-mono">
-                      <span>01:24 / 04:15</span>
-                      <div className="flex items-center space-x-4 opacity-70">
-                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
-                      </div>
-                   </div>
+            <h3 className="text-sm font-bold tracking-tight uppercase p-5 border-b border-dark-border">Physical Metrics</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y divide-dark-border">
+              {[
+                { label: 'Height', key: 'height', unit: 'cm' },
+                { label: 'Weight', key: 'weight', unit: 'kg' },
+                { label: 'Top Speed', key: 'topSpeed', unit: 'km/h' },
+                { label: 'Matches/Wk', key: 'matchesPerWeek', unit: '' },
+              ].map(({ label, key, unit }) => (
+                <div key={key} className="p-5 text-center bg-dark-bg/20">
+                  <p className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-2">{label}</p>
+                  {isEditing ? (
+                    <div className="flex items-center justify-center space-x-1">
+                      <input type="number" step={key === 'topSpeed' ? 0.1 : 1} value={(displayData[key] as number) ?? ''} onChange={(e) => handleInput(key, Number(e.target.value))} className={`${inputCls} w-20 text-center py-1`} />
+                      {unit && <span className="text-[10px] text-text-secondary font-bold">{unit}</span>}
+                    </div>
+                  ) : (
+                    <p className="text-xl font-black text-white">
+                      {(displayData[key] as number) ? `${displayData[key]} ${unit}` : <span className="text-text-secondary/40">—</span>}
+                    </p>
+                  )}
                 </div>
-              </div>
-              
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 bg-brand rounded-full flex items-center justify-center text-dark-bg transform group-hover:scale-110 transition-transform shadow-[0_0_20px_rgba(204,255,0,0.4)] z-10">
-                <Play className="w-6 h-6 fill-current ml-1" />
-              </div>
+              ))}
             </div>
+          </div>
 
-            <div className="p-4 bg-dark-bg">
-               <p className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-3 flex items-center space-x-2">
-                 <svg className="w-3 h-3 text-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-                 <span>AI Generated Tags</span>
-               </p>
-               <div className="flex flex-wrap gap-2">
-                 <span className="px-3 py-1.5 bg-dark-surface border border-dark-border text-xs text-text-secondary font-bold uppercase tracking-wider rounded">Defensive Transition</span>
-                 <span className="px-3 py-1.5 bg-dark-surface border border-dark-border text-xs text-text-secondary font-bold uppercase tracking-wider rounded">Ball Recovery</span>
-                 <span className="px-3 py-1.5 bg-dark-surface border border-dark-border text-xs text-text-secondary font-bold uppercase tracking-wider rounded flex items-center">
-                   High Press <div className="w-1.5 h-1.5 rounded-full bg-brand ml-2"></div>
-                 </span>
-               </div>
-            </div>
+          {/* Tactical Tendencies */}
+          <div className="bg-dark-surface border border-dark-border rounded-xl p-6">
+            <h3 className="text-sm font-bold tracking-tight uppercase mb-4">Tactical Tendencies</h3>
+            {isEditing ? (
+              <div>
+                <textarea
+                  value={(displayData.tacticalTendencies ?? []).join(', ')}
+                  onChange={(e) => handleArrayInput('tacticalTendencies', e.target.value)}
+                  className={`${inputCls} resize-none`}
+                  placeholder="e.g. Overlapping, High Intensity (comma separated)"
+                  rows={3}
+                />
+                <p className="text-[10px] text-text-secondary mt-1">Separate with commas</p>
+              </div>
+            ) : (displayData.tacticalTendencies ?? []).length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {(displayData.tacticalTendencies ?? []).map((t) => (
+                  <span key={t} className="px-3 py-1.5 border border-dark-border bg-dark-bg text-[10px] font-bold uppercase tracking-wider text-text-primary rounded-md">
+                    {t}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-text-secondary text-sm">No tactical tendencies listed.{canEdit && ' Edit profile to add.'}</p>
+            )}
           </div>
         </div>
 
         {/* Right Column */}
         <div className="space-y-6">
-          {!isEditing && role !== 'player' && (
+          {/* Experience */}
+          <div className="bg-dark-surface border border-dark-border rounded-xl p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-sm font-bold tracking-tight uppercase">Experience</h3>
+              {isEditing && (
+                <button onClick={addExp} className="flex items-center space-x-1 text-brand hover:text-brand-hover p-1.5 bg-brand/10 hover:bg-brand/20 rounded transition-colors">
+                  <Plus className="w-4 h-4" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest">Add</span>
+                </button>
+              )}
+            </div>
+
+            {isEditing ? (
+              <div className="space-y-4">
+                {(editForm.experience ?? []).map((exp) => (
+                  <div key={exp.id} className="bg-dark-bg/50 p-4 border border-dark-border/50 rounded-lg">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1">
+                        <label className="block text-[8px] font-bold text-text-secondary uppercase tracking-widest mb-1">Period</label>
+                        <input type="text" value={exp.period} onChange={(e) => handleExpChange(exp.id, 'period', e.target.value)} className={`${inputCls} text-xs py-1.5`} placeholder="e.g. 2023 - Present" />
+                      </div>
+                      <button onClick={() => removeExp(exp.id)} className="text-red-500 hover:text-red-400 p-1.5 bg-red-500/10 rounded mt-4 ml-2">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-[8px] font-bold text-text-secondary uppercase tracking-widest mb-1">Team</label>
+                        <input type="text" value={exp.team} onChange={(e) => handleExpChange(exp.id, 'team', e.target.value)} className={`${inputCls} py-1.5`} placeholder="Team name" />
+                      </div>
+                      <div>
+                        <label className="block text-[8px] font-bold text-text-secondary uppercase tracking-widest mb-1">League / Level</label>
+                        <input type="text" value={exp.league} onChange={(e) => handleExpChange(exp.id, 'league', e.target.value)} className={`${inputCls} py-1.5`} placeholder="League/Division" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {(editForm.experience ?? []).length === 0 && (
+                  <p className="text-xs text-text-secondary text-center py-4">No experience added yet.</p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-5 relative before:content-[''] before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-px before:bg-dark-border">
+                {(profileData.experience ?? []).length > 0 ? (
+                  (profileData.experience ?? []).map((exp, idx) => (
+                    <div key={exp.id} className="relative pl-8">
+                      <div className={`absolute left-[5px] top-1.5 w-3 h-3 rounded-full z-10 ${idx === 0 ? 'border-2 border-dark-surface bg-brand' : 'bg-dark-border'}`} />
+                      <p className={`text-[10px] font-bold ${idx === 0 ? 'text-brand' : 'text-text-secondary'} tracking-widest uppercase mb-1`}>{exp.period}</p>
+                      <h4 className="text-sm font-bold mb-0.5">{exp.team}</h4>
+                      <p className="text-xs text-text-secondary">{exp.league}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-text-secondary text-sm pl-8">No experience listed.{canEdit && ' Edit profile to add.'}</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Profile completeness */}
+          {!isEditing && (
             <div className="bg-dark-surface border border-dark-border rounded-xl p-6">
-               <button className="w-full py-4 bg-brand text-dark-bg font-bold uppercase tracking-wider rounded mb-4 hover:bg-brand-hover transition-transform active:scale-[0.98] flex items-center justify-center space-x-2 shadow-[0_0_15px_rgba(204,255,0,0.2)]">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                  <span>Invite to Trial</span>
-               </button>
-               <div className="flex space-x-4">
-                  <button className="flex-1 py-3 border border-dark-border bg-dark-bg text-text-secondary text-xs font-bold uppercase tracking-wider rounded hover:border-brand/50 hover:text-brand transition-colors flex items-center justify-center space-x-2">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
-                    <span>Shortlist</span>
-                  </button>
-                  <button className="flex-1 py-3 border border-dark-border bg-dark-bg text-text-secondary text-xs font-bold uppercase tracking-wider rounded hover:border-brand/50 hover:text-brand transition-colors flex items-center justify-center space-x-2">
-                    <Eye className="w-4 h-4" />
-                    <span>Interest</span>
-                  </button>
-               </div>
+              <h3 className="text-sm font-bold tracking-tight uppercase mb-4">Profile Completeness</h3>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-text-secondary">Overall</span>
+                <span className="text-sm font-black text-brand">{completeness}%</span>
+              </div>
+              <div className="h-2 bg-dark-bg rounded-full overflow-hidden">
+                <div className="h-full bg-brand rounded-full transition-all duration-500" style={{ width: `${completeness}%` }} />
+              </div>
+              {completeness < 100 && canEdit && (
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="w-full mt-4 py-2 border border-brand text-brand font-bold text-xs rounded hover:bg-brand/10 transition-colors uppercase tracking-wider"
+                >
+                  Complete Profile
+                </button>
+              )}
             </div>
           )}
-
-          <div className="bg-dark-surface border border-dark-border rounded-xl p-6">
-             <h3 className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-4 flex items-center justify-between">
-                Tactical Tendencies
-             </h3>
-             {isEditing ? (
-                <div className="space-y-2">
-                  <textarea 
-                    value={editForm.tacticalTendencies.join(', ')} 
-                    onChange={(e) => handleArrayInput('tacticalTendencies', e.target.value)}
-                    className={`${inputClass} resize-none`}
-                    placeholder="e.g. Overlapping, High Intensity (comma separated)"
-                    rows={3}
-                  />
-                  <p className="text-[10px] text-text-secondary">Separate with commas</p>
-                </div>
-             ) : (
-                <div className="flex flex-wrap gap-2">
-                  {profileData.tacticalTendencies.map(tendency => (
-                    <span key={tendency} className="px-3 py-1.5 border border-dark-border bg-dark-bg text-[10px] font-bold uppercase tracking-wider text-text-primary rounded-md">{tendency}</span>
-                  ))}
-                </div>
-             )}
-          </div>
-
-          <div className="bg-dark-surface border border-dark-border rounded-xl overflow-hidden">
-             <h3 className="text-lg font-bold tracking-tight uppercase p-6 border-b border-dark-border">Metrics</h3>
-             <div className="grid grid-cols-2 divide-x divide-y divide-dark-border">
-                <div className="p-6 text-center bg-dark-bg/30">
-                  <p className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-2">Height</p>
-                  {isEditing ? (
-                    <div className="flex items-center justify-center space-x-2">
-                      <input type="number" value={editForm.height} onChange={(e) => handleInputChange('height', Number(e.target.value))} className={`${inputClass} w-20 text-center py-1`} />
-                      <span className="text-[10px] text-text-secondary font-bold">CM</span>
-                    </div>
-                  ) : (
-                    <p className="text-2xl font-black text-white">{profileData.height} <span className="text-xs font-normal text-text-secondary">cm</span></p>
-                  )}
-                </div>
-                <div className="p-6 text-center bg-dark-bg/30">
-                  <p className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-2">Weight</p>
-                  {isEditing ? (
-                    <div className="flex items-center justify-center space-x-2">
-                      <input type="number" value={editForm.weight} onChange={(e) => handleInputChange('weight', Number(e.target.value))} className={`${inputClass} w-20 text-center py-1`} />
-                      <span className="text-[10px] text-text-secondary font-bold">KG</span>
-                    </div>
-                  ) : (
-                    <p className="text-2xl font-black text-white">{profileData.weight} <span className="text-xs font-normal text-text-secondary">kg</span></p>
-                  )}
-                </div>
-                <div className="p-6 text-center border-t border-dark-border bg-dark-bg/30">
-                  <p className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-2">Top Speed</p>
-                  {isEditing ? (
-                    <div className="flex items-center justify-center space-x-2">
-                      <input type="number" step="0.1" value={editForm.topSpeed} onChange={(e) => handleInputChange('topSpeed', Number(e.target.value))} className={`${inputClass} w-20 text-center py-1`} />
-                      <span className="text-[10px] text-text-secondary font-bold">KM/H</span>
-                    </div>
-                  ) : (
-                    <p className="text-2xl font-black text-white">{profileData.topSpeed} <span className="text-xs font-normal text-text-secondary">km/h</span></p>
-                  )}
-                </div>
-                <div className="p-6 text-center border-t border-dark-border bg-dark-bg/30">
-                  <p className="text-[10px] font-bold text-text-secondary uppercase tracking-widest mb-2">Matches/Wk</p>
-                  {isEditing ? (
-                    <input type="number" value={editForm.matchesPerWeek} onChange={(e) => handleInputChange('matchesPerWeek', Number(e.target.value))} className={`${inputClass} w-20 text-center py-1 mx-auto`} />
-                  ) : (
-                    <p className="text-2xl font-black text-white">{profileData.matchesPerWeek}</p>
-                  )}
-                </div>
-             </div>
-             <div className="bg-dark-bg p-4 border-t border-dark-border flex justify-between items-center">
-                <p className="text-[10px] font-bold text-text-secondary uppercase tracking-widest">Avg Mins Played</p>
-                {isEditing ? (
-                  <div className="flex items-center space-x-2">
-                    <input type="number" value={editForm.avgMinsPlayed} onChange={(e) => handleInputChange('avgMinsPlayed', Number(e.target.value))} className={`${inputClass} w-20 text-center py-1`} />
-                    <span className="text-[10px] text-text-secondary font-bold">MIN</span>
-                  </div>
-                ) : (
-                  <p className="text-lg font-black text-brand">{profileData.avgMinsPlayed} <span className="text-[10px] font-bold text-text-secondary uppercase tracking-widest ml-1">min</span></p>
-                )}
-             </div>
-          </div>
-
-          <div className="bg-dark-surface border border-dark-border rounded-xl p-6">
-             <div className="flex justify-between items-center mb-6">
-               <h3 className="text-lg font-bold tracking-tight uppercase">Experience</h3>
-               {isEditing && (
-                 <button onClick={addExperience} className="text-brand hover:text-brand-hover p-1.5 bg-brand/10 hover:bg-brand/20 rounded transition-colors flex items-center space-x-1">
-                   <Plus className="w-4 h-4" />
-                   <span className="text-[10px] font-bold uppercase tracking-widest">Add</span>
-                 </button>
-               )}
-             </div>
-             
-             <div className="space-y-6 relative before:content-[''] before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-px before:bg-dark-border">
-                {isEditing ? (
-                  <div className="space-y-4">
-                    {editForm.experience.map((exp) => (
-                      <div key={exp.id} className="relative pl-8 bg-dark-bg/50 p-4 border border-dark-border/50 rounded-lg group">
-                        <div className="absolute left-[-5px] top-5 w-3 h-3 rounded-full border-2 border-dark-surface bg-brand z-10"></div>
-                        <div className="flex justify-between items-start mb-3 gap-2">
-                          <div className="flex-1">
-                            <label className="block text-[8px] font-bold text-text-secondary uppercase tracking-widest mb-1">Time Period</label>
-                            <input 
-                              type="text" 
-                              value={exp.period} 
-                              onChange={(e) => handleExperienceChange(exp.id, 'period', e.target.value)}
-                              className={`${inputClass} text-xs py-1.5`}
-                              placeholder="e.g. 2023 - Present"
-                            />
-                          </div>
-                          <button onClick={() => removeExperience(exp.id)} className="text-red-500 hover:text-red-400 p-1.5 bg-red-500/10 hover:bg-red-500/20 rounded mt-4 transition-colors">
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                        <div className="space-y-3">
-                          <div>
-                            <label className="block text-[8px] font-bold text-text-secondary uppercase tracking-widest mb-1">Team Name</label>
-                            <input 
-                              type="text" 
-                              value={exp.team} 
-                              onChange={(e) => handleExperienceChange(exp.id, 'team', e.target.value)}
-                              className={`${inputClass} py-1.5`}
-                              placeholder="Team Name"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[8px] font-bold text-text-secondary uppercase tracking-widest mb-1">League / Level</label>
-                            <input 
-                              type="text" 
-                              value={exp.league} 
-                              onChange={(e) => handleExperienceChange(exp.id, 'league', e.target.value)}
-                              className={`${inputClass} py-1.5`}
-                              placeholder="League/Division"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {editForm.experience.length === 0 && (
-                      <p className="text-xs text-text-secondary text-center py-4 pl-6">No experience added yet.</p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {profileData.experience.map((exp, index) => (
-                      <div key={exp.id} className="relative pl-8">
-                         <div className={`absolute left-1.5 top-1.5 w-3 h-3 rounded-full ${index === 0 ? 'border-[3px] border-dark-surface bg-brand' : 'bg-dark-border'} z-10 transform -translate-x-1/2`}></div>
-                         <p className={`text-[10px] font-bold ${index === 0 ? 'text-brand' : 'text-text-secondary'} tracking-widest uppercase mb-1`}>{exp.period}</p>
-                         <h4 className="text-sm font-bold text-text-primary mb-0.5">{exp.team}</h4>
-                         <p className="text-xs text-text-secondary">{exp.league}</p>
-                      </div>
-                    ))}
-                    {profileData.experience.length === 0 && (
-                      <p className="text-xs text-text-secondary pl-8">No experience listed.</p>
-                    )}
-                  </div>
-                )}
-             </div>
-          </div>
         </div>
       </div>
     </div>
