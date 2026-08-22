@@ -56,11 +56,13 @@ export const Applications = () => {
         const field = role === 'club' ? 'clubId' : 'playerId';
         const q = query(
           collection(db, 'applications'),
-          where(field, '==', user.uid),
-          orderBy('createdAt', 'desc'),
+          where(field, '==', user.uid)
         );
         const snap = await getDocs(q);
-        setApplications(snap.docs.map((d) => ({ id: d.id, ...d.data() } as ApplicationDoc)));
+        const fetchedApps = snap.docs.map((d) => ({ id: d.id, ...d.data() } as ApplicationDoc));
+        // Sort in memory to avoid requiring a composite index in Firestore
+        fetchedApps.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        setApplications(fetchedApps);
       } catch (err) {
         console.error('Applications error:', err);
         setFetchError('Failed to load applications. Please refresh.');

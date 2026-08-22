@@ -64,11 +64,13 @@ export const TrialManager = () => {
         const field = role === 'club' ? 'clubId' : 'playerId';
         const q = query(
           collection(db, 'trials'),
-          where(field, '==', user.uid),
-          orderBy('createdAt', 'desc'),
+          where(field, '==', user.uid)
         );
         const snap = await getDocs(q);
-        setTrials(snap.docs.map((d) => ({ id: d.id, ...d.data() } as TrialDoc)));
+        const fetchedTrials = snap.docs.map((d) => ({ id: d.id, ...d.data() } as TrialDoc));
+        // Sort in memory to avoid requiring a composite index in Firestore
+        fetchedTrials.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+        setTrials(fetchedTrials);
       } catch (err) {
         console.error('Trials error:', err);
         setFetchError('Failed to load trials.');
