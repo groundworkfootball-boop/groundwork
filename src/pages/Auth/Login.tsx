@@ -16,8 +16,12 @@ function getAuthErrorMessage(code: string): string {
       return 'Too many failed attempts. Please try again later.';
     case 'auth/network-request-failed':
       return 'Network error. Please check your connection and try again.';
+    case 'auth/operation-not-allowed':
+      return 'Email/password sign-in is not enabled in Firebase Console.';
+    case 'auth/invalid-api-key':
+      return 'Invalid Firebase API Key. Please check your .env configuration.';
     default:
-      return 'Login failed. Please try again.';
+      return `Login failed (${code || 'Unknown error'}). Please try again.`;
   }
 }
 

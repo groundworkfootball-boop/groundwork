@@ -73,6 +73,10 @@ export const Register = () => {
         toastError('An account with this email already exists.');
       } else if (code === 'auth/weak-password') {
         toastError('Password must be at least 6 characters.');
+      } else if (code === 'auth/operation-not-allowed') {
+        toastError('Email/password sign-up is not enabled in Firebase Console.');
+      } else if (code === 'auth/invalid-api-key') {
+        toastError('Invalid Firebase API Key. Please check your .env configuration.');
       } else {
         toastError(msg);
       }
