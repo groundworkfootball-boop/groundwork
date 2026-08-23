@@ -3,7 +3,7 @@ import { FileText, ChevronRight, Loader2, AlertCircle, Clock, Building2 } from '
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../lib/toast';
 import { db } from '../lib/firebase';
-import { collection, query, where, getDocs, orderBy, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 
 interface ApplicationDoc {
   id: string;

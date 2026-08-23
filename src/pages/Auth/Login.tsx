@@ -41,7 +41,7 @@ export const Login = () => {
     try {
       await login(email, password);
       success('Welcome back!');
-      navigate('/');
+      navigate('/dashboard');
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code ?? '';
       error(getAuthErrorMessage(code));
@@ -60,7 +60,7 @@ export const Login = () => {
 
       <div className="w-full max-w-md bg-dark-surface border border-dark-border p-8 rounded-2xl shadow-2xl relative z-10">
         <div className="text-center mb-8">
-          <Link to="/landing" className="inline-block">
+          <Link to="/" className="inline-block">
             <h1 className="text-brand font-black text-3xl tracking-tighter uppercase">Groundwork</h1>
           </Link>
           <p className="text-text-secondary text-sm mt-2 font-medium tracking-wide">ENTER THE COMMAND CENTER</p>

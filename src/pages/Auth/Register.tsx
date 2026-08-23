@@ -65,7 +65,7 @@ export const Register = () => {
       }
       await register(email, password, role, name, withGuardian || isYouth ? extra : undefined);
       success('Account created! Check your email for a verification link.');
-      navigate('/');
+      navigate('/dashboard');
     } catch (err: unknown) {
       const msg = (err as Error)?.message ?? 'Registration failed. Please try again.';
       const code = (err as { code?: string })?.code ?? '';
@@ -101,7 +101,7 @@ export const Register = () => {
 
       <div className="w-full max-w-md bg-dark-surface border border-dark-border p-8 rounded-2xl shadow-2xl relative z-10">
         <div className="text-center mb-8">
-          <Link to="/landing" className="inline-block">
+          <Link to="/" className="inline-block">
             <h1 className="text-brand font-black text-3xl tracking-tighter uppercase">Groundwork</h1>
           </Link>
           <p className="text-text-secondary text-sm mt-2 font-medium tracking-wide">

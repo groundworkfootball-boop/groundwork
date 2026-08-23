@@ -41,7 +41,7 @@ export const ForgotPassword = () => {
 
       <div className="w-full max-w-md bg-dark-surface border border-dark-border p-8 rounded-2xl shadow-2xl relative z-10">
         <div className="text-center mb-8">
-          <Link to="/landing">
+          <Link to="/">
             <h1 className="text-brand font-black text-3xl tracking-tighter uppercase">Groundwork</h1>
           </Link>
           <p className="text-text-secondary text-sm mt-2 font-medium tracking-wide">RESET YOUR PASSWORD</p>
