@@ -163,7 +163,7 @@ export const Profile = () => {
   const dashOffset = circumference - (circumference * completeness) / 100;
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 pb-20">
+    <div className="w-full space-y-6 pb-20">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <Link

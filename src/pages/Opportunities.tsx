@@ -4,7 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../lib/toast';
 import { db } from '../lib/firebase';
 import { collection, query, where, getDocs, addDoc, serverTimestamp, getDoc, doc } from 'firebase/firestore';
-import { calculateMatchScore, type PlayerProfile, type ClubPreferences } from '../lib/scoringEngine';
+import { calculateMatchScore } from '../lib/services/matchingService';
+import type { ClubRecord, PlayerRecord } from '../app/types';
 
 interface OpportunityDoc {
   id: string;
@@ -23,10 +24,14 @@ interface PlayerProfileData {
   positions?: string[];
   region?: string;
   playingLevel?: number;
-  attributes?: Record<string, number>;
   availability?: string[];
-  hasActiveBoost?: boolean;
-  [key: string]: unknown;
+  trainingAvailability?: string[];
+  trialAvailability?: string[];
+  profileComplete?: number;
+  profileCompleteness?: number;
+  boostsActive?: boolean;
+  searchable?: boolean;
+  isYouth?: boolean;
 }
 
 interface ClubOppWithScore extends OpportunityDoc {
@@ -80,15 +85,21 @@ export const Opportunities = () => {
     load();
   }, [user?.uid, role]);
 
-  // Build a PlayerProfile from Firestore data for scoring engine
-  const enginePlayer: PlayerProfile = useMemo(() => ({
+  const enginePlayer: PlayerRecord = useMemo(() => ({
+    id: user?.uid ?? 'player',
+    uid: user?.uid ?? 'player',
     positions: playerProfile?.positions ?? [],
-    region: (playerProfile?.region as string) ?? '',
-    playingLevel: (playerProfile?.playingLevel as number) ?? 1,
-    skillRatings: (playerProfile?.attributes as Record<string, number>) ?? {},
-    availability: (playerProfile?.availability as string[]) ?? [],
-    hasActiveBoost: (playerProfile?.hasActiveBoost as boolean) ?? false,
-  }), [playerProfile]);
+    region: playerProfile?.region ?? '',
+    playingLevel: playerProfile?.playingLevel ?? 1,
+    availability: playerProfile?.availability ?? [],
+    trainingAvailability: playerProfile?.trainingAvailability ?? [],
+    trialAvailability: playerProfile?.trialAvailability ?? [],
+    profileComplete: playerProfile?.profileComplete ?? 0,
+    profileCompleteness: playerProfile?.profileComplete ?? playerProfile?.profileCompleteness ?? 0,
+    boostsActive: playerProfile?.boostsActive ?? false,
+    searchable: playerProfile?.searchable ?? false,
+    isYouth: playerProfile?.isYouth ?? false,
+  }), [playerProfile, user?.uid]);
 
   const matchedOpportunities: ClubOppWithScore[] = useMemo(() => {
     return opportunities
@@ -98,14 +109,16 @@ export const Opportunities = () => {
       })
       .map((opp) => {
         // Build minimal ClubPreferences for scoring
-        const clubPrefs: ClubPreferences = {
-          targetPositions: opp.position ? [opp.position] : [],
+        const clubRecord: ClubRecord = {
+          id: opp.id,
+          uid: opp.clubId,
+          name: opp.clubName,
           region: opp.region ?? '',
-          targetLevel: 4, // Default, clubs should set this
-          requiredAvailability: [],
+          targetPositions: opp.position ? [opp.position] : [],
+          targetPlayingLevels: [4],
         };
-        const breakdown = calculateMatchScore(enginePlayer, clubPrefs);
-        return { ...opp, score: breakdown.totalScore, breakdown };
+        const breakdown = calculateMatchScore(enginePlayer, clubRecord);
+        return { ...opp, score: breakdown.score, breakdown };
       })
       .sort((a, b) => {
         if (sortBy === 'match') return b.score - a.score;
@@ -164,7 +177,7 @@ export const Opportunities = () => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto h-full flex flex-col pb-20">
+    <div className="w-full h-full flex flex-col pb-20">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
         <div className="flex items-center space-x-4">
@@ -194,7 +207,7 @@ export const Opportunities = () => {
         </div>
       )}
 
-      <div className="flex flex-col lg:flex-row gap-8">
+      <div className="flex flex-col lg:flex-row gap-8 w-full">
         {/* Filters Sidebar */}
         <div className="w-full lg:w-64 shrink-0 space-y-6">
           <div className="bg-dark-surface border border-dark-border rounded-xl p-6 shadow-lg lg:sticky lg:top-6">
@@ -340,12 +353,12 @@ export const Opportunities = () => {
                     </h4>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
                       {[
-                        { label: 'Position', value: opp.breakdown.positionMatch },
-                        { label: 'Level', value: opp.breakdown.levelMatch },
-                        { label: 'Attributes', value: opp.breakdown.attributesMatch },
-                        { label: 'Region', value: opp.breakdown.distanceMatch },
-                        { label: 'Availability', value: opp.breakdown.availabilityMatch },
-                        { label: 'Boost', value: opp.breakdown.boostMatch },
+                        { label: 'Position', value: opp.breakdown.positionScore },
+                        { label: 'Level', value: opp.breakdown.levelScore },
+                        { label: 'Attributes', value: opp.breakdown.attributeScore },
+                        { label: 'Region', value: opp.breakdown.distanceScore },
+                        { label: 'Availability', value: opp.breakdown.availabilityScore },
+                        { label: 'Boost', value: opp.breakdown.boostScore },
                       ].map(({ label, value }) => (
                         <div key={label} className="bg-dark-bg p-3 rounded border border-dark-border text-center">
                           <p className="text-[10px] text-text-secondary font-bold uppercase mb-1">{label}</p>

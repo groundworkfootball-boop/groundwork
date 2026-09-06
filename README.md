@@ -1,84 +1,80 @@
-# GROUNDWORK Recruitment Command
+# GROUNDWORK Football Recruitment & Opportunity Platform
 
-**Milestone 1 — Environment Setup & Architecture**
+GROUNDWORK is a multi-sided football opportunity platform connecting adult players, youth players, guardians, football clubs, and platform administrators.
 
-GROUNDWORK is a UK football opportunity platform connecting grassroots/non-league football players and clubs, with a separate youth pathway planned for future development.
+---
 
-## Architecture
+## ⚽ Key Features
 
-This project is built using:
-- **Frontend**: React (Vite) + TypeScript
-- **Backend**: Firebase (Authentication, Firestore, Storage, Hosting)
-- **Region**: All Firebase resources must be provisioned in `europe-west2` (London)
+- **Role-Dedicated Portals:** Tailored workflows for Player, Guardian, Club, and Administrator accounts.
+- **Unique Club Codes:** Every registered club receives an authoritative alphanumeric identifier (e.g. `GW-ARS-9B2F`) for quick onboarding.
+- **Multi-Platform Club Invites:** 1-click sharing via WhatsApp, Email, SMS, Twitter/X, Facebook, LinkedIn, Direct Link Copy, and standalone QR codes.
+- **Deterministic Matching Engine:** 100% pure mathematical scoring across 6 weights (Position 30%, Level 20%, Attributes 20%, Region 15%, Availability 10%, Boost 5%). **AI never calculates player match scores.**
+- **Transparent Match Explanations:** Real-time percentage contribution breakdown visible to players and scouts.
+- **Youth Safeguarding First:** Automatic minor detection (<18), pending consent state, unsearchable by default, and immediate delisting on consent withdrawal.
+- **Club Recruitment & Squad Management:** Post opportunities, manage shortlists, coordinate trials, and track squad positional balance.
+- **AI Squad Gap Analysis:** Analyzes formation depth to highlight positional gaps and seamlessly routes scouts to qualified deterministic matches.
+- **AI Video Observation Tagging:** Objective action tagging (e.g. "Left Foot Action") requiring explicit player approval before saving.
+- **Auditable Administration:** Club credential reviews, youth clearance approvals, matching weight adjustments, moderation queue, and GDPR data export/deletion workflows.
 
-## Firebase Environments
+---
 
-The project utilizes three strictly separated Firebase projects:
-- **Development**: `groundwork-8ac4f`
-- **Staging**: `groundwork-staging` (Pending Client Creation)
-- **Production**: `groundwork-production` (Pending Client Creation)
+## 🛠️ Technology Stack
 
-## Local Development
+- **Frontend:** React 19, TypeScript, Vite, React Router v7, Tailwind CSS, Lucide Icons
+- **Backend:** Firebase (Authentication, Cloud Firestore, Cloud Storage, Cloud Functions, Hosting)
+- **Payments:** Stripe Subscriptions & Visibility Boosts
+- **AI:** Server-side Claude / OpenRouter provider abstraction
 
-1. **Install Dependencies**:
-   ```bash
-   npm install
-   ```
+---
 
-2. **Configure Environment Variables**:
-   Copy `.env.example` to `.env.local` or `.env.development` and fill in the required keys for the development environment.
-   ```bash
-   cp .env.example .env.development
-   ```
+## 📚 Documentation Directory
 
-3. **Run Development Server**:
-   ```bash
-   npm run dev
-   ```
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture and intelligence separation
+- [MATCHING_ENGINE.md](MATCHING_ENGINE.md) - Deterministic scoring algorithm and weight configurations
+- [SAFEGUARDING.md](SAFEGUARDING.md) - Youth protection, guardian consent flows, and club verification
+- [FIREBASE_SETUP.md](FIREBASE_SETUP.md) - Firebase configuration, rules, and environment setup
+- [SECURITY.md](SECURITY.md) - Zero-trust security model and Firestore permission rules
+- [DATA_MODEL.md](DATA_MODEL.md) - Complete Firestore schema and collection specifications
+- [AI.md](AI.md) - AI provider abstraction and ethical guardrails
+- [ADMIN_GUIDE.md](ADMIN_GUIDE.md) - Operational manual for platform administrators
+- [TESTING.md](TESTING.md) - Test strategy and critical test runner instructions
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Production deployment checklist and commands
 
-## Environment Switching
+---
 
-Use the Firebase CLI to switch between environments for administrative tasks:
+## 🚀 Quick Start
 
+### 1. Install Dependencies
 ```bash
-# Switch to Development
-firebase use development
-
-# Switch to Staging
-firebase use staging
-
-# Switch to Production
-firebase use production
+npm install
 ```
 
-**Never deploy to Production directly from a local machine.**
-
-## Deployment Flow
-
-Deployment is managed via GitHub Actions (CI/CD):
-1. **Development**: Pushing to the `develop` branch triggers deployment to the Development Firebase project.
-2. **Staging**: Pushing to the `staging` branch triggers deployment to the Staging Firebase project.
-3. **Production**: Merging into the `main` branch triggers deployment to the Production Firebase project. Production requires strict review.
-
-## Security Model
-
-- **Deny-by-default**: All Firestore and Storage reads/writes are denied unless explicitly allowed.
-- **Role-based Access**: Users can only access their own data. Administrative operations require a verified admin claim.
-- **Audit Logging**: All critical actions are recorded in an `audit_logs` collection, which is immutable to normal users.
-- **Youth Data Separation**: Future youth profiles (`players_youth`) will remain structurally isolated from adult profiles (`players`) to ensure strict safeguarding and data protection compliance.
-
-## Firestore Structure (Foundation)
-
-- `/players/{userId}` - Adult player profiles (M2).
-- `/players_youth/{userId}` - Youth player profiles (Future).
-- `/clubs/{clubId}` - Club profiles and settings (M2).
-- `/audit_logs/{logId}` - Immutable audit trails.
-- `/system_config/{configId}` - Platform-wide configurations (Admin only).
-
-## Testing
-
-To verify the milestone foundation, run:
+### 2. Configure Environment Variables
+Copy `.env.example` to `.env.development` and insert your Firebase project credentials:
 ```bash
-npm test
+cp .env.example .env.development
 ```
-(Tests will be expanded in future milestones to cover M2 and M3 business logic).
+
+### 3. Run Critical Unit Tests
+```bash
+node --experimental-strip-types scripts/test-critical-ts.ts
+```
+
+### 4. Type-Check Codebase
+```bash
+node ./node_modules/typescript/bin/tsc --noEmit
+```
+
+### 5. Start Local Development Server
+```bash
+npm run dev
+```
+
+---
+
+## 🔒 Security Principles
+
+1. **Deny by default:** Firestore Security Rules verify document ownership, user role claims, and youth consent server-side.
+2. **Deterministic matching:** Player scores are calculated strictly via mathematical rules; AI is barred from scoring or ranking players.
+3. **Guardians in control:** Guardian consent is required before any under-18 profile is indexed or visible to clubs. Delisting is immediate upon withdrawal.

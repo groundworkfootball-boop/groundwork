@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { auth, db } from '../lib/firebase';
 import {
   onAuthStateChanged,
@@ -7,11 +7,13 @@ import {
   signOut as firebaseSignOut,
   sendPasswordResetEmail,
   sendEmailVerification,
+  GoogleAuthProvider,
+  signInWithPopup,
   type User as FirebaseUser,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
-export type Role = 'player' | 'club' | 'admin';
+export type Role = 'player' | 'guardian' | 'club' | 'admin';
 
 export interface AppUser {
   uid: string;
@@ -19,6 +21,7 @@ export interface AppUser {
   role: Role;
   name: string;
   emailVerified: boolean;
+  claimsRole?: Role | null;
   [key: string]: unknown;
 }
 
@@ -29,6 +32,7 @@ interface AuthContextType {
   firebaseUser: FirebaseUser | null;
   loading: boolean;
   login: (email: string, pass: string) => Promise<void>;
+  loginWithGoogle: (fallbackRole?: Role) => Promise<void>;
   register: (email: string, pass: string, role: Role, name: string, extra?: Record<string, unknown>) => Promise<void>;
   logout: () => Promise<void>;
   sendReset: (email: string) => Promise<void>;
@@ -48,34 +52,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (fbUser) {
         setFirebaseUser(fbUser);
         try {
-          const userRef = doc(db, 'users', fbUser.uid);
-          const userSnap = await getDoc(userRef);
+          const [tokenResult, userSnap] = await Promise.all([
+            fbUser.getIdTokenResult(true).catch(() => null),
+            getDoc(doc(db, 'users', fbUser.uid)),
+          ]);
 
-          if (userSnap.exists()) {
-            const data = userSnap.data();
-            const userRole: Role = data.role ?? 'player';
-            setRole(userRole);
-            setUser({
-              uid: fbUser.uid,
-              email: fbUser.email,
-              emailVerified: fbUser.emailVerified,
-              name: data.name ?? data.displayName ?? fbUser.email ?? 'User',
-              role: userRole,
-              ...data,
-            });
-            setIsAuthenticated(true);
-          } else {
-            // No user doc — set basic authenticated state
-            setRole('player');
-            setUser({
-              uid: fbUser.uid,
-              email: fbUser.email,
-              emailVerified: fbUser.emailVerified,
-              name: fbUser.displayName ?? fbUser.email ?? 'User',
-              role: 'player',
-            });
-            setIsAuthenticated(true);
-          }
+          const claimRole = (tokenResult?.claims?.role as Role | undefined) ?? null;
+          const profile = userSnap.exists() ? userSnap.data() : {};
+          const userRole: Role = claimRole ?? ((profile.role as Role | undefined) ?? 'player');
+
+          setRole(userRole);
+          setUser({
+            uid: fbUser.uid,
+            email: fbUser.email,
+            emailVerified: fbUser.emailVerified,
+            name: (profile.name as string) ?? fbUser.displayName ?? fbUser.email ?? 'User',
+            role: userRole,
+            claimsRole: claimRole,
+            ...profile,
+          });
+          setIsAuthenticated(true);
         } catch (err) {
           console.error('Error fetching user profile:', err);
           setIsAuthenticated(true);
@@ -85,6 +81,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             emailVerified: fbUser.emailVerified,
             name: fbUser.email ?? 'User',
             role: 'player',
+            claimsRole: null,
           });
         }
       } else {
@@ -100,6 +97,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const login = async (email: string, pass: string) => {
     await signInWithEmailAndPassword(auth, email, pass);
+  };
+
+  const loginWithGoogle = async (fallbackRole: Role = 'player') => {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    const result = await signInWithPopup(auth, provider);
+
+    await setDoc(
+      doc(db, 'users', result.user.uid),
+      {
+        uid: result.user.uid,
+        email: result.user.email,
+        name: result.user.displayName ?? result.user.email ?? 'User',
+        role: fallbackRole,
+        emailVerified: result.user.emailVerified,
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
   };
 
   const register = async (
@@ -154,6 +171,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           updatedAt: serverTimestamp(),
         });
       }
+    } else if (selectedRole === 'guardian') {
+      await setDoc(doc(db, 'guardians', uid), {
+        uid,
+        email,
+        name,
+        role: 'guardian',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
     } else if (selectedRole === 'club') {
       await setDoc(doc(db, 'clubs', uid), {
         uid,
@@ -182,7 +208,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AuthContext.Provider
-      value={{ role, isAuthenticated, user, firebaseUser, loading, login, register, logout, sendReset }}
+      value={useMemo(
+        () => ({ role, isAuthenticated, user, firebaseUser, loading, login, loginWithGoogle, register, logout, sendReset }),
+        [role, isAuthenticated, user, firebaseUser, loading],
+      )}
     >
       {!loading && children}
     </AuthContext.Provider>

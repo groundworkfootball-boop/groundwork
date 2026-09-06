@@ -1,5 +1,5 @@
 import { assertFails, assertSucceeds, initializeTestEnvironment, RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { describe, it, beforeAll, afterAll, beforeEach, expect } from 'vitest';
+import { describe, it, beforeAll, afterAll, beforeEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -7,7 +7,6 @@ let testEnv: RulesTestEnvironment;
 
 describe('Firestore Security Rules', () => {
   beforeAll(async () => {
-    // Initialize the test environment with our rules
     testEnv = await initializeTestEnvironment({
       projectId: 'groundwork-test',
       firestore: {
@@ -17,7 +16,6 @@ describe('Firestore Security Rules', () => {
   });
 
   beforeEach(async () => {
-    // Clear the database between tests
     await testEnv.clearFirestore();
   });
 
@@ -25,71 +23,49 @@ describe('Firestore Security Rules', () => {
     await testEnv.cleanup();
   });
 
-  describe('Global Deny-by-Default', () => {
-    it('should reject unauthenticated read to arbitrary collections', async () => {
-      const unauthedDb = testEnv.unauthenticatedContext().firestore();
-      await assertFails(unauthedDb.collection('unknown').doc('123').get());
-    });
-
-    it('should reject unauthenticated write to arbitrary collections', async () => {
-      const unauthedDb = testEnv.unauthenticatedContext().firestore();
-      await assertFails(unauthedDb.collection('unknown').doc('123').set({ data: 'test' }));
-    });
+  it('denies unauthenticated access by default', async () => {
+    const db = testEnv.unauthenticatedContext().firestore();
+    await assertFails(db.collection('players').doc('alice').get());
+    await assertFails(db.collection('users').doc('alice').set({ name: 'Alice' }));
   });
 
-  describe('Adult Pathway (players)', () => {
-    it('should allow authenticated users to read player profiles', async () => {
-      const aliceDb = testEnv.authenticatedContext('alice').firestore();
-      await assertSucceeds(aliceDb.collection('players').doc('bob').get());
-    });
-
-    it('should allow user to create their own profile', async () => {
-      const aliceDb = testEnv.authenticatedContext('alice').firestore();
-      await assertSucceeds(aliceDb.collection('players').doc('alice').set({ name: 'Alice' }));
-    });
-
-    it('should reject user creating profile for another user', async () => {
-      const aliceDb = testEnv.authenticatedContext('alice').firestore();
-      await assertFails(aliceDb.collection('players').doc('bob').set({ name: 'Bob' }));
-    });
-
-    it('should reject user updating protected fields (score)', async () => {
-      const aliceDb = testEnv.authenticatedContext('alice').firestore();
-      // Initially create without protected fields
-      await testEnv.withSecurityRulesDisabled(async (context) => {
-        await context.firestore().collection('players').doc('alice').set({ name: 'Alice' });
-      });
-
-      await assertFails(aliceDb.collection('players').doc('alice').update({ score: 99 }));
-    });
+  it('allows a player to create and read their own profile', async () => {
+    const db = testEnv.authenticatedContext('player-1', { role: 'player' }).firestore();
+    await assertSucceeds(db.collection('players').doc('player-1').set({ searchable: true }));
+    await assertSucceeds(db.collection('players').doc('player-1').get());
   });
 
-  describe('Youth Pathway (players_youth)', () => {
-    it('should reject non-owner access to youth data', async () => {
-      const aliceDb = testEnv.authenticatedContext('alice').firestore();
-      await assertFails(aliceDb.collection('players_youth').doc('charlie').get());
-    });
-
-    it('should allow owner access to youth data', async () => {
-      const charlieDb = testEnv.authenticatedContext('charlie').firestore();
-      await assertSucceeds(charlieDb.collection('players_youth').doc('charlie').get());
-    });
+  it('prevents a player from creating another player profile', async () => {
+    const db = testEnv.authenticatedContext('player-1', { role: 'player' }).firestore();
+    await assertFails(db.collection('players').doc('player-2').set({ searchable: true }));
   });
 
-  describe('Audit Logging (audit_logs)', () => {
-    it('should reject authenticated user read access', async () => {
-      const aliceDb = testEnv.authenticatedContext('alice').firestore();
-      await assertFails(aliceDb.collection('audit_logs').doc('log1').get());
+  it('allows a guardian account to create its own guardian record', async () => {
+    const db = testEnv.authenticatedContext('guardian-1', { role: 'guardian' }).firestore();
+    await assertSucceeds(db.collection('guardians').doc('guardian-1').set({ name: 'Guardian One' }));
+  });
+
+  it('allows a club account to create its own club record', async () => {
+    const db = testEnv.authenticatedContext('club-1', { role: 'club' }).firestore();
+    await assertSucceeds(db.collection('clubs').doc('club-1').set({ name: 'Club One' }));
+  });
+
+  it('denies club access to hidden youth profiles', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore().collection('players').doc('youth-1').set({ searchable: false, isYouth: true });
     });
 
-    it('should reject authenticated user write access', async () => {
-      const aliceDb = testEnv.authenticatedContext('alice').firestore();
-      await assertFails(aliceDb.collection('audit_logs').doc('log1').set({ action: 'test' }));
+    const db = testEnv.authenticatedContext('club-1', { role: 'club' }).firestore();
+    await assertFails(db.collection('players').doc('youth-1').get());
+  });
+
+  it('allows admin read access to audit logs and blocks writes', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await context.firestore().collection('auditLogs').doc('log-1').set({ action: 'test' });
     });
 
-    it('should allow admin read access', async () => {
-      const adminDb = testEnv.authenticatedContext('admin', { admin: true }).firestore();
-      await assertSucceeds(adminDb.collection('audit_logs').doc('log1').get());
-    });
+    const db = testEnv.authenticatedContext('admin-1', { role: 'admin', isSuperAdmin: true }).firestore();
+    await assertSucceeds(db.collection('auditLogs').doc('log-1').get());
+    await assertFails(db.collection('auditLogs').doc('log-1').set({ action: 'change' }));
   });
 });

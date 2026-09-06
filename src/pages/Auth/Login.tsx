@@ -27,7 +27,7 @@ function getAuthErrorMessage(code: string): string {
 
 export const Login = () => {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, loginWithGoogle } = useAuth();
   const { success, error } = useToast();
 
   const [email, setEmail] = useState('');
@@ -45,6 +45,19 @@ export const Login = () => {
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code ?? '';
       error(getAuthErrorMessage(code));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      setIsLoading(true);
+      await loginWithGoogle('player');
+      success('Signed in with Google.');
+      navigate('/dashboard');
+    } catch (err) {
+      error((err as Error)?.message ?? 'Google sign-in failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -113,6 +126,15 @@ export const Login = () => {
                 <ArrowRight className="w-5 h-5" />
               </>
             )}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleGoogleLogin}
+            disabled={isLoading}
+            className="w-full border border-white/10 bg-white/5 text-white font-semibold py-3 rounded-xl flex items-center justify-center space-x-2 hover:bg-white/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <span>Continue with Google</span>
           </button>
         </form>
 

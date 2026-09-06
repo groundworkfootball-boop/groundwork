@@ -1,0 +1,2840 @@
+
+You are a senior principal software architect, full-stack engineer, UI/UX engineer, Firebase architect, security engineer, DevOps engineer, AI engineer, and QA engineer.
+
+You are responsible for building the COMPLETE production-ready GROUNDWORK football recruitment and opportunity platform.
+
+DO NOT build a prototype.
+DO NOT create fake functionality.
+DO NOT leave TODO placeholders for core features.
+DO NOT create buttons that do nothing.
+DO NOT use mock data once Firebase functionality is implemented.
+DO NOT simplify the requirements.
+DO NOT skip security.
+DO NOT put sensitive Firebase Admin credentials in frontend code.
+DO NOT allow AI to control player matching scores.
+
+Everything must be implemented end-to-end and connected to real Firebase services.
+
+==================================================
+1. PRODUCT
+==================================================
+
+Product name:
+
+GROUNDWORK
+
+GROUNDWORK is a multi-sided football opportunity ecosystem connecting:
+
+1. Adult Players
+2. Youth Players
+3. Parents / Guardians
+4. Football Clubs
+5. Platform Administrators
+
+The platform consists of:
+
+PLAYER PLATFORM
+CLUB RECRUITMENT PLATFORM
+ADMINISTRATION + SAFEGUARDING PLATFORM
+
+The platform must support:
+
+- registration
+- authentication
+- profiles
+- player discovery
+- deterministic player-club matching
+- match score explanations
+- club recruitment
+- applications
+- shortlists
+- trials
+- video uploads
+- AI video tagging
+- AI squad gap analysis
+- AI player improvement recommendations
+- youth safeguarding
+- guardian consent
+- club verification
+- subscriptions
+- boosts
+- Stripe payments
+- notifications
+- moderation
+- GDPR-style data export/deletion workflows
+- audit logging
+- analytics
+- monitoring
+- production deployment
+
+==================================================
+2. TECHNOLOGY STACK
+==================================================
+
+Use the following stack.
+
+FRONTEND:
+
+React
+TypeScript
+Vite
+React Router
+Tailwind CSS
+shadcn/ui or a clean reusable component system
+React Hook Form
+Zod
+TanStack Query
+Lucide icons
+
+BACKEND:
+
+Firebase
+
+Use:
+
+Firebase Authentication
+Cloud Firestore
+Firebase Storage
+Firebase Cloud Functions
+Firebase Hosting
+Firebase App Check
+Firebase Cloud Messaging where appropriate
+Firebase Extensions where genuinely useful
+
+BACKGROUND PROCESSING:
+
+Firebase Cloud Functions
+Cloud Tasks / Pub/Sub where required
+Cloud Run for heavy video processing if required
+
+VIDEO:
+
+FFmpeg
+
+For production video processing, use Cloud Run or another secure server-side processing environment rather than attempting heavy transcoding inside a normal client.
+
+AI:
+
+Create an AI provider abstraction.
+
+Primary implementation can support:
+
+Claude API
+OpenRouter-compatible API
+
+Never expose AI provider API keys to the browser.
+
+All AI calls must happen server-side.
+
+PAYMENTS:
+
+Stripe
+
+Stripe Secret Key must only exist server-side.
+
+NOTIFICATIONS:
+
+Email provider abstraction
+OneSignal if configured
+Firebase Cloud Messaging where appropriate
+
+MONITORING:
+
+Sentry
+Firebase logs
+Cloud Logging
+Cloud Monitoring
+
+ANALYTICS:
+
+PostHog or Firebase Analytics
+
+==================================================
+3. CORE ARCHITECTURE
+==================================================
+
+Use this architecture:
+
+React Client
+        |
+        v
+Firebase Authentication
+        |
+        v
+Firestore
+        |
+        +---- Cloud Functions
+        |
+        +---- Cloud Tasks / PubSub
+        |
+        +---- Firebase Storage
+        |
+        +---- Cloud Run / FFmpeg
+        |
+        +---- AI Provider
+        |
+        +---- Stripe
+        |
+        +---- Notification Provider
+
+The browser must NEVER directly perform privileged operations.
+
+Use Firestore Security Rules for baseline authorization.
+
+Use Cloud Functions for:
+
+- privileged operations
+- role changes
+- club verification
+- youth verification
+- consent processing
+- match score calculation
+- match result generation
+- payment processing
+- Stripe webhooks
+- AI calls
+- video processing orchestration
+- moderation actions
+- GDPR operations
+- audit logs
+- administrative operations
+
+==================================================
+4. USER ROLES
+==================================================
+
+Implement the following roles:
+
+PLAYER
+GUARDIAN
+CLUB
+ADMIN
+
+Potential internal roles:
+
+SUPER_ADMIN
+MODERATOR
+SAFEGUARDING_ADMIN
+FINANCE_ADMIN
+
+Use Firebase custom claims for authoritative role checks.
+
+Never trust a role supplied by the client.
+
+A user's role must be checked:
+
+1. Firebase Auth
+2. Custom claims
+3. Firestore server-side authorization
+4. Cloud Function authorization
+
+==================================================
+5. APPLICATION STRUCTURE
+==================================================
+
+Create a clean production folder structure similar to:
+
+src/
+
+  app/
+    router/
+    providers/
+    config/
+
+  components/
+    ui/
+    layout/
+    forms/
+    players/
+    clubs/
+    videos/
+    matching/
+    safeguarding/
+    payments/
+    notifications/
+    admin/
+
+  pages/
+
+    public/
+      LandingPage
+      AboutPage
+      HowItWorksPage
+      ClubsPage
+      PlayersPage
+      PricingPage
+      ContactPage
+      PrivacyPage
+      TermsPage
+      SafeguardingPage
+
+    auth/
+      LoginPage
+      RegisterPage
+      ForgotPasswordPage
+      VerifyEmailPage
+      ResetPasswordPage
+
+    player/
+      DashboardPage
+      ProfilePage
+      ProfileBuilderPage
+      OpportunitiesPage
+      OpportunityDetailsPage
+      ApplicationsPage
+      ShortlistsPage
+      VideosPage
+      VideoDetailsPage
+      RecommendationsPage
+      NotificationsPage
+      SettingsPage
+      SubscriptionPage
+
+    guardian/
+      DashboardPage
+      YouthProfilePage
+      ConsentPage
+      ConsentHistoryPage
+      SettingsPage
+
+    club/
+      DashboardPage
+      ClubProfilePage
+      ClubOnboardingPage
+      VerificationPage
+      SearchPlayersPage
+      PlayerProfilePage
+      SquadPage
+      SquadGapAnalysisPage
+      ShortlistsPage
+      ApplicationsPage
+      TrialsPage
+      MessagesPage
+      AnalyticsPage
+      SubscriptionPage
+      BoostsPage
+      NotificationsPage
+      SettingsPage
+
+    admin/
+      DashboardPage
+      UsersPage
+      PlayersPage
+      ClubsPage
+      YouthVerificationPage
+      ConsentManagementPage
+      ModerationPage
+      ReportsPage
+      PaymentsPage
+      SubscriptionsPage
+      MatchingConfigPage
+      AIManagementPage
+      AuditLogsPage
+      GDPRPage
+      SystemHealthPage
+      SettingsPage
+
+==================================================
+6. DESIGN SYSTEM
+==================================================
+
+Build a professional football-tech SaaS interface.
+
+The UI must look like a real commercial product.
+
+Requirements:
+
+- responsive desktop/tablet/mobile
+- accessibility
+- keyboard navigation
+- clean typography
+- consistent spacing
+- reusable components
+- skeleton loading
+- empty states
+- error states
+- success states
+- confirmation dialogs
+- toast notifications
+- optimistic updates where safe
+- pagination
+- filtering
+- sorting
+- search
+- modal/drawer systems
+- breadcrumbs
+- responsive sidebar
+- mobile navigation
+- profile completion indicators
+- verification badges
+- AI-assisted labels
+- safeguarding indicators
+
+Do not make every page visually identical.
+
+Player UI should feel player-focused.
+
+Club UI should feel recruitment-focused.
+
+Admin UI should feel operational.
+
+==================================================
+7. FIREBASE AUTHENTICATION
+==================================================
+
+Implement:
+
+Email/password registration
+Email/password login
+Google OAuth
+Password reset
+Email verification
+Session persistence
+Logout
+Account deletion
+Account recovery
+
+Registration must determine account type.
+
+PLAYER
+GUARDIAN
+CLUB
+
+Admin accounts must never be created through normal public registration.
+
+Create admin users manually or through a secure administrative workflow.
+
+Use Firebase custom claims:
+
+role: player
+role: guardian
+role: club
+role: admin
+
+Additional claims may include:
+
+isSuperAdmin
+isModerator
+isSafeguardingAdmin
+isFinanceAdmin
+
+==================================================
+8. PLAYER REGISTRATION
+==================================================
+
+Player registration collects:
+
+- name
+- email
+- password
+- date of birth
+- primary position
+- secondary position
+- playing level
+- region
+- availability
+
+If age is under 18:
+
+automatically route to youth registration.
+
+Youth profile must start as:
+
+consentStatus = "pending"
+searchable = false
+
+Youth profiles MUST NOT appear in club search until guardian consent has been successfully granted.
+
+==================================================
+9. PLAYER PROFILE
+==================================================
+
+Create a complete player profile.
+
+Fields:
+
+identity
+display name
+date of birth
+age group
+positions
+dominant foot
+height
+physical attributes
+skill ratings
+playing level
+current club
+previous clubs
+playing history
+achievements
+availability
+training availability
+trial availability
+region
+preferred radius
+profile photo
+bio
+video clips
+coach verification
+profile completeness
+search visibility
+
+Skill ratings:
+
+technical
+passing
+dribbling
+shooting
+first_touch
+defending
+crossing
+heading
+tackling
+
+Physical:
+
+pace
+acceleration
+stamina
+strength
+agility
+
+Mental/playing:
+
+positioning
+decision_making
+work_rate
+teamwork
+
+Do not use AI to calculate these scores.
+
+==================================================
+10. PROFILE COMPLETENESS
+==================================================
+
+Implement deterministic profile completeness.
+
+Example:
+
+profile photo
+positions
+availability
+playing level
+skills
+history
+bio
+video
+region
+
+Calculate completion percentage server-side.
+
+Store:
+
+profileCompleteness
+
+Trigger recalculation whenever profile data changes.
+
+==================================================
+11. CLUB REGISTRATION
+==================================================
+
+Club registration collects:
+
+club name
+club type
+league
+region
+stadium/training location
+website
+contact details
+recruitment contact
+target player positions
+target age groups
+target playing levels
+preferred radius
+formation
+playing style
+squad requirements
+
+Club starts with:
+
+verifiedAdult = false
+verifiedYouth = false
+
+==================================================
+12. CLUB VERIFICATION
+==================================================
+
+Create complete verification workflow.
+
+Club uploads:
+
+- registration documents
+- safeguarding certificates if youth recruitment is requested
+- proof of club identity
+- authorized representative information
+
+Verification statuses:
+
+pending
+under_review
+approved
+rejected
+expired
+suspended
+
+Admin reviews verification.
+
+Youth verification requires:
+
+safeguarding documentation
+manual admin approval
+expiry date
+
+Club youth access automatically expires when verification expires.
+
+==================================================
+13. MATCHING ENGINE
+==================================================
+
+CRITICAL REQUIREMENT:
+
+AI MUST NEVER calculate player match scores.
+
+The matching engine must be:
+
+DETERMINISTIC
+RULE-BASED
+AUDITABLE
+REPRODUCIBLE
+
+Implement:
+
+calculateMatchScore(player, club, config)
+
+The function must be pure.
+
+No:
+
+randomness
+current-time dependence
+AI
+LLM
+external unpredictable calls
+
+==================================================
+14. MATCHING WEIGHTS
+==================================================
+
+Default weights:
+
+Position compatibility = 30%
+
+Distance / region = 15%
+
+Playing level = 20%
+
+Player score / attributes = 20%
+
+Availability overlap = 10%
+
+Visibility / boost = 5%
+
+Total = 100%
+
+Store weights in Firestore.
+
+Example:
+
+matchingConfig/default
+
+{
+  positionWeight: 0.30,
+  distanceWeight: 0.15,
+  levelWeight: 0.20,
+  attributesWeight: 0.20,
+  availabilityWeight: 0.10,
+  boostWeight: 0.05,
+  version: 1
+}
+
+Every configuration change must create a new version.
+
+==================================================
+15. MATCHING CALCULATIONS
+==================================================
+
+Position:
+
+exact match = 1.0
+adjacent position = 0.5
+incompatible = 0
+
+Distance:
+
+use a deterministic decay function based on club preferred radius.
+
+Playing level:
+
+normalize player level against club target tier.
+
+Attributes:
+
+weighted average of relevant attributes.
+
+Availability:
+
+calculate overlap between player and club training/trial availability.
+
+Boost:
+
+flat bonus while active.
+
+Final:
+
+score =
+positionScore * positionWeight +
+distanceScore * distanceWeight +
+levelScore * levelWeight +
+attributeScore * attributeWeight +
+availabilityScore * availabilityWeight +
+boostScore * boostWeight
+
+Clamp result between 0 and 1.
+
+Store score breakdown.
+
+==================================================
+16. MATCH RESULT STORAGE
+==================================================
+
+Create:
+
+matchResults/{clubId_playerId}
+
+Fields:
+
+clubId
+playerId
+matchScore
+scoreBreakdown
+positionScore
+distanceScore
+levelScore
+attributeScore
+availabilityScore
+boostScore
+configVersion
+scoredAt
+ttlExpiry
+playerSnapshot
+position
+ageBand
+region
+searchable
+
+Use denormalized snapshots for efficient search.
+
+Never calculate the score during a normal search request.
+
+==================================================
+17. MATCH RECALCULATION
+==================================================
+
+When a scoring-relevant player field changes:
+
+trigger Cloud Function
+
+enqueue recalculation job
+
+calculate scores
+
+write match results
+
+Use optimistic concurrency.
+
+Store:
+
+updatedAt
+calculationVersion
+
+A stale worker must NEVER overwrite a newer calculation.
+
+Implement tests for race conditions.
+
+==================================================
+18. CLUB PLAYER SEARCH
+==================================================
+
+Club search must support:
+
+position
+age
+age band
+region
+distance
+playing level
+availability
+match score
+verified status
+video availability
+profile completeness
+
+Sort:
+
+match score
+distance
+profile completeness
+recent activity
+
+Search results should use denormalized match data.
+
+Do not read hundreds of complete player documents unnecessarily.
+
+Implement:
+
+pagination
+cursor pagination
+Firestore indexes
+server-side filtering where appropriate
+
+Do not download entire player database to browser.
+
+==================================================
+19. YOUTH SEARCH SECURITY
+==================================================
+
+This is CRITICAL.
+
+Youth profiles must NEVER be protected only through frontend UI.
+
+A malicious user must not be able to bypass React and access youth information directly.
+
+Every youth data access must verify:
+
+requesting user
+role
+club identity
+club youth verification
+verification expiry
+youth consent
+profile searchable state
+
+Allowed:
+
+verified youth club
+guardian of that youth
+authorized admin
+
+Denied:
+
+unverified club
+expired club
+normal player
+unauthorized user
+
+Implement defense-in-depth:
+
+Firestore Security Rules
+Cloud Functions
+custom claims
+server-side checks
+
+==================================================
+20. GUARDIAN CONSENT
+==================================================
+
+Youth registration:
+
+consentStatus = pending
+
+Profile:
+
+searchable = false
+
+Create guardian consent process.
+
+Collect:
+
+guardian name
+guardian email
+relationship
+
+Create signed/time-limited consent token.
+
+Send guardian email.
+
+Guardian opens consent portal.
+
+Show:
+
+plain-language privacy notice
+data usage explanation
+youth safety information
+consent checkbox
+timestamp
+privacy policy version
+
+On approval:
+
+consentStatus = granted
+consentGrantedAt = server timestamp
+searchable = true
+
+Create immutable consent audit record.
+
+==================================================
+21. CONSENT WITHDRAWAL
+==================================================
+
+Guardian must be able to withdraw consent.
+
+On withdrawal:
+
+consentStatus = withdrawn
+searchable = false
+remove from club search immediately
+disable youth AI processing
+queue associated videos for deletion
+create audit record
+
+Do not simply hide the profile in React.
+
+Enforce server-side.
+
+==================================================
+22. CONSENT AUDIT
+==================================================
+
+Create:
+
+consentAudit/{id}
+
+Append-only.
+
+Fields:
+
+youthId
+guardianId
+action
+timestamp
+hashedIp
+privacyNoticeVersion
+userAgentHash if appropriate
+source
+
+Actions:
+
+granted
+withdrawn
+re-granted
+
+Normal users must never update or delete these records.
+
+Only authorized administrative cleanup process can handle statutory retention.
+
+==================================================
+23. VIDEO SYSTEM
+==================================================
+
+Players can upload football clips.
+
+Implement:
+
+upload initiation
+signed upload
+progress
+validation
+maximum clip count
+maximum duration
+file size limits
+format validation
+virus/malware considerations
+processing state
+thumbnail generation
+transcoding
+playback
+delete
+publish/unpublish
+
+Important:
+
+The frontend upload limit is NOT the security mechanism.
+
+Cloud Functions must verify:
+
+ownership
+clip count
+file type
+file size
+permissions
+youth consent
+
+==================================================
+24. VIDEO PROCESSING
+==================================================
+
+Flow:
+
+Player requests upload permission.
+
+Cloud Function validates request.
+
+Generate secure upload location.
+
+Client uploads directly to Firebase Storage.
+
+Storage trigger detects upload.
+
+Processing job starts.
+
+Validate media.
+
+FFmpeg:
+
+validate duration
+validate format
+transcode
+optimize bitrate
+generate thumbnail
+generate streaming-friendly output
+
+Store:
+
+processingStatus
+
+Possible values:
+
+pending
+processing
+ready
+failed
+deleted
+
+Delete raw upload after successful processing when appropriate.
+
+Serve optimized media through secure delivery.
+
+==================================================
+25. AI VIDEO TAGGING
+==================================================
+
+AI video tagging must NOT influence matching scores.
+
+After video processing:
+
+sample representative frames
+
+send only approved/necessary content to AI provider
+
+AI receives:
+
+sampled frames
+declared position
+clip duration
+
+AI must generate ONLY observable descriptions.
+
+Allowed:
+
+dominant foot visible
+wide camera framing
+attacking third
+defensive action
+ball control movement
+passing sequence
+running movement
+
+Forbidden:
+
+skill rating
+player ranking
+talent prediction
+future potential
+comparative judgement
+age inference
+sensitive attribute inference
+
+Output:
+
+{
+  tags: [],
+  summary: ""
+}
+
+Store as:
+
+aiSuggestion
+
+Player sees:
+
+"AI-assisted suggestion"
+
+Player can:
+
+Accept
+Edit
+Delete
+Reject
+
+AI output must never automatically become a permanent fact.
+
+==================================================
+26. AI SQUAD GAP ANALYSIS
+==================================================
+
+Club provides structured:
+
+squad counts
+formation
+target level
+
+No unrestricted free text prompt.
+
+AI analyzes squad composition.
+
+Output:
+
+[
+  {
+    position: "CM",
+    gapSeverity: "Critical",
+    rationale: "..."
+  }
+]
+
+Allowed severity:
+
+Critical
+Moderate
+Minor
+
+AI must NOT create a player match score.
+
+When a gap is selected:
+
+redirect to deterministic player search.
+
+AI identifies the need.
+
+Matching engine finds the players.
+
+Cache result using a hash of squad JSON.
+
+If squad data hasn't changed:
+
+DO NOT call AI again.
+
+==================================================
+27. AI PLAYER IMPROVEMENT RECOMMENDATIONS
+==================================================
+
+Create scheduled recommendations.
+
+Use only player's own structured data.
+
+Potential signals:
+
+missing availability
+missing video
+incomplete profile
+sparse skills
+low profile completeness
+low search visibility
+
+Generate:
+
+[
+  {
+    action: "...",
+    reason: "..."
+  }
+]
+
+Never expose another player's private data.
+
+Never show these recommendations to clubs.
+
+Display on player's dashboard.
+
+Mark:
+
+AI-assisted
+
+Allow dismissing recommendations.
+
+Cache results.
+
+Rate limit requests.
+
+==================================================
+28. AI SECURITY
+==================================================
+
+Every AI feature must have:
+
+versioned system prompt
+structured input
+structured JSON output
+server-side execution
+rate limiting
+content hashing
+caching
+logging
+cost tracking
+error handling
+timeout
+retry policy
+provider abstraction
+
+AI service must NOT have database permission to write:
+
+playerScores
+matchResults
+
+AI can only write to AI-specific collections.
+
+Example:
+
+aiJobs
+aiResults
+aiUsage
+
+==================================================
+29. AI YOUTH SAFETY
+==================================================
+
+NEVER send youth data to AI unless:
+
+consentStatus == granted
+
+This must be checked:
+
+before enqueueing
+during execution
+before provider request
+
+If consent is withdrawn while job is queued:
+
+cancel/skip job.
+
+If consent is withdrawn while processing:
+
+stop processing where possible.
+
+Do not send unnecessary guardian information to AI.
+
+==================================================
+30. PLAYER OPPORTUNITY FEED
+==================================================
+
+Create personalized opportunity feed.
+
+Sources:
+
+clubs
+trials
+opportunities
+recruitment requests
+
+Rank using deterministic matching.
+
+Display:
+
+club
+position
+level
+location
+match percentage
+availability
+trial information
+application status
+
+Do not use AI ranking.
+
+==================================================
+31. APPLICATION SYSTEM
+==================================================
+
+Players can apply to opportunities.
+
+Statuses:
+
+draft
+submitted
+viewed
+shortlisted
+trial_invited
+rejected
+withdrawn
+accepted
+
+Club can:
+
+review
+shortlist
+reject
+invite to trial
+
+Player receives notifications for status changes.
+
+==================================================
+32. SHORTLIST SYSTEM
+==================================================
+
+Clubs can:
+
+add player
+remove player
+create shortlist
+rename shortlist
+add notes
+change shortlist status
+
+Do not expose private club notes to players.
+
+Maintain audit history.
+
+==================================================
+33. TRIAL SYSTEM
+==================================================
+
+Clubs can create trial opportunities.
+
+Fields:
+
+date
+time
+location
+position
+age group
+level
+instructions
+capacity
+status
+
+Players can:
+
+apply
+accept
+decline
+
+Implement reminders.
+
+==================================================
+34. CLUB SQUAD MANAGEMENT
+==================================================
+
+Club dashboard must support:
+
+squad members
+position distribution
+age groups
+playing levels
+formation
+availability
+recruitment requirements
+
+Squad data feeds AI Squad Gap Analysis.
+
+==================================================
+35. BOOSTS
+==================================================
+
+Players can purchase visibility boosts.
+
+Boost must NEVER manipulate deterministic scoring beyond the documented boost dimension.
+
+Store:
+
+boostStatus
+boostStartedAt
+boostExpiresAt
+boostProduct
+stripePaymentId
+
+When boost expires:
+
+automatically deactivate.
+
+==================================================
+36. SUBSCRIPTIONS
+==================================================
+
+Implement Stripe subscriptions.
+
+Potential club plans:
+
+Free
+Standard
+Premium
+
+Use configuration rather than hardcoding prices everywhere.
+
+Subscription state:
+
+trialing
+active
+past_due
+cancelled
+unpaid
+incomplete
+
+Stripe is authoritative for payment status.
+
+==================================================
+37. STRIPE WEBHOOKS
+==================================================
+
+Implement secure Stripe webhook endpoint.
+
+Verify Stripe signature.
+
+Create:
+
+processedStripeEvents
+
+Before processing:
+
+check event ID.
+
+If already processed:
+
+return success without repeating operation.
+
+This provides webhook idempotency.
+
+Handle:
+
+checkout.session.completed
+customer.subscription.created
+customer.subscription.updated
+customer.subscription.deleted
+invoice.payment_succeeded
+invoice.payment_failed
+
+==================================================
+38. NOTIFICATIONS
+==================================================
+
+Create notification system.
+
+Types:
+
+application received
+application status changed
+shortlisted
+trial invitation
+trial reminder
+guardian consent
+verification status
+subscription
+payment
+boost
+AI recommendation
+system notification
+
+Channels:
+
+in-app
+email
+push where configured
+
+Create:
+
+notifications/{notificationId}
+
+Fields:
+
+userId
+type
+title
+body
+read
+createdAt
+metadata
+
+==================================================
+39. ADMIN DASHBOARD
+==================================================
+
+Build a complete administrative platform.
+
+Dashboard:
+
+total players
+adult players
+youth players
+clubs
+verified clubs
+pending verification
+active subscriptions
+applications
+trials
+videos
+AI usage
+revenue
+moderation queue
+safeguarding alerts
+system health
+
+==================================================
+40. USER MANAGEMENT
+==================================================
+
+Admin can:
+
+search users
+view users
+suspend users
+unsuspend users
+verify users
+change appropriate roles
+view activity
+review reports
+manage deletion requests
+
+Never allow arbitrary role escalation from client.
+
+==================================================
+41. CLUB MANAGEMENT
+==================================================
+
+Admin can:
+
+review clubs
+approve
+reject
+suspend
+verify adult recruitment
+verify youth recruitment
+set expiry
+review documentation
+
+==================================================
+42. YOUTH VERIFICATION
+==================================================
+
+Dedicated admin screen.
+
+Show:
+
+club
+documents
+verification state
+expiry
+reviewer
+review timestamp
+
+Actions:
+
+approve
+reject
+request more information
+suspend
+
+Every action must be audited.
+
+==================================================
+43. MODERATION
+==================================================
+
+Create moderation queue.
+
+Reports may include:
+
+profile
+video
+club
+application
+message
+other content
+
+Statuses:
+
+pending
+investigating
+resolved
+dismissed
+
+Admin actions must create audit records.
+
+==================================================
+44. AUDIT LOG
+==================================================
+
+Create append-only audit logs.
+
+Track:
+
+login security events
+role changes
+verification decisions
+youth access
+consent changes
+payment actions
+admin actions
+moderation actions
+data exports
+data deletion
+configuration changes
+
+Fields:
+
+actorId
+actorRole
+action
+resourceType
+resourceId
+timestamp
+metadata
+
+Do not store unnecessary sensitive data.
+
+==================================================
+45. GDPR / DATA MANAGEMENT
+==================================================
+
+Implement user data export request.
+
+Implement deletion request.
+
+Admin workflow:
+
+pending
+processing
+completed
+rejected where legally permitted
+
+Export relevant user-owned data.
+
+Respect statutory retention requirements.
+
+Consent audit records must follow retention policy.
+
+Deletion must remove discoverable personal data while retaining only information that must legally be retained.
+
+==================================================
+46. SECURITY
+==================================================
+
+Implement:
+
+Firebase App Check
+Firestore Security Rules
+Storage Security Rules
+custom claims
+server-side authorization
+rate limiting
+input validation
+Zod schemas
+sanitization
+CORS restrictions
+secure headers
+CSRF protection where applicable
+secure cookies where used
+least privilege
+secret management
+audit logging
+
+Never trust:
+
+client roles
+client prices
+client payment state
+client youth verification
+client consent state
+client match scores
+
+==================================================
+47. FIRESTORE SECURITY RULES
+==================================================
+
+Write production-grade Firestore Security Rules.
+
+Rules must be based on:
+
+authenticated user
+custom claims
+document ownership
+club ownership
+guardian relationship
+verification status
+
+Do not use:
+
+allow read, write: if true
+
+Do not use broad authenticated-user access for sensitive collections.
+
+Separate sensitive collections.
+
+==================================================
+48. STORAGE SECURITY
+==================================================
+
+Secure player media.
+
+Rules must verify:
+
+authenticated user
+ownership
+role
+resource path
+
+Youth video access must additionally respect consent and club verification.
+
+Use server-side signed access where necessary.
+
+Never make youth videos publicly accessible.
+
+==================================================
+49. FIRESTORE DATA MODEL
+==================================================
+
+Create collections similar to:
+
+users
+players
+youthProfiles
+guardians
+clubs
+clubVerifications
+youthVerifications
+playerVideos
+videoProcessingJobs
+opportunities
+applications
+shortlists
+shortlistItems
+trials
+squadMembers
+squadRequirements
+matchResults
+playerScores
+matchingConfigs
+matchingConfigVersions
+consentAudits
+notifications
+subscriptions
+payments
+boosts
+stripeEvents
+aiJobs
+aiResults
+aiUsage
+moderationReports
+auditLogs
+gdprRequests
+systemSettings
+
+Use document references carefully.
+
+Avoid excessive Firestore fan-out.
+
+Use denormalized read models where performance requires them.
+
+==================================================
+50. FIRESTORE PERFORMANCE
+==================================================
+
+Optimize aggressively.
+
+Do NOT:
+
+download entire collections
+perform unnecessary real-time listeners
+recalculate scores during searches
+fetch full profiles for list views
+send huge documents
+duplicate large media data
+make repeated AI calls
+
+Use:
+
+pagination
+cursor pagination
+selective listeners
+denormalized snapshots
+cached AI results
+background calculations
+batch writes
+transactions
+compound indexes
+
+==================================================
+51. OFFLINE / NETWORK EFFICIENCY
+==================================================
+
+Use Firebase offline capabilities where useful.
+
+Optimize:
+
+Firestore reads
+image sizes
+video sizes
+bundle size
+API/function calls
+AI calls
+
+Use lazy loading.
+
+Use route-level code splitting.
+
+Compress images.
+
+Use thumbnails instead of original images in lists.
+
+Do not autoplay videos unnecessarily.
+
+Do not load video until user requests playback.
+
+==================================================
+52. REAL-TIME FEATURES
+==================================================
+
+Use Firestore listeners selectively.
+
+Real-time:
+
+notifications
+application status
+trial updates
+verification status where useful
+processing status
+
+Do not attach listeners to huge collections.
+
+==================================================
+53. DASHBOARDS
+==================================================
+
+PLAYER DASHBOARD
+
+Display:
+
+profile completion
+match opportunities
+recommended clubs
+applications
+shortlists
+videos
+AI improvement recommendations
+notifications
+boost status
+
+CLUB DASHBOARD
+
+Display:
+
+recruitment summary
+new matches
+shortlists
+applications
+trials
+squad
+squad gaps
+subscription
+verification status
+analytics
+
+ADMIN DASHBOARD
+
+Display:
+
+platform metrics
+pending verifications
+safeguarding alerts
+moderation
+payments
+AI usage
+system health
+
+==================================================
+54. ANALYTICS
+==================================================
+
+Track events such as:
+
+registration_started
+registration_completed
+profile_completed
+video_uploaded
+video_processed
+video_published
+club_registered
+club_verified
+search_performed
+player_profile_viewed
+shortlist_created
+player_shortlisted
+application_submitted
+trial_created
+trial_accepted
+subscription_started
+boost_purchased
+consent_granted
+consent_withdrawn
+ai_feature_used
+
+Never send unnecessary sensitive youth data to analytics.
+
+==================================================
+55. MONITORING
+==================================================
+
+Integrate Sentry.
+
+Monitor:
+
+frontend errors
+Cloud Function errors
+video failures
+AI failures
+payment failures
+permission errors
+safeguarding failures
+
+Priority:
+
+P1:
+
+authentication outage
+payment webhook failure
+youth access-control failure
+
+P2:
+
+matching failures
+AI failures
+consent email failures
+
+P3:
+
+queue delays
+performance regressions
+
+==================================================
+56. TESTING
+==================================================
+
+Write:
+
+unit tests
+integration tests
+security rule tests
+Cloud Function tests
+matching engine tests
+payment webhook tests
+consent tests
+AI schema tests
+video processing tests
+end-to-end tests
+
+CRITICAL matching tests:
+
+exact position
+adjacent position
+incompatible position
+distance boundary
+level boundary
+attribute boundary
+availability boundary
+boost
+configuration versions
+stale calculation
+race condition
+
+CRITICAL youth tests:
+
+unverified club cannot access youth
+expired club cannot access youth
+verified club can access consented youth
+guardian can access own youth
+unrelated guardian cannot access
+withdrawn consent removes search visibility
+youth AI job blocked without consent
+direct Firestore access cannot bypass protection
+
+==================================================
+57. TEST USERS
+==================================================
+
+Create development seed tooling.
+
+Example:
+
+player@example.com
+guardian@example.com
+club@example.com
+admin@example.com
+
+Never hardcode real production credentials.
+
+Use environment variables.
+
+==================================================
+58. ENVIRONMENT CONFIGURATION
+==================================================
+
+Create:
+
+.env.example
+
+Include placeholders for:
+
+Firebase configuration
+Stripe
+AI provider
+OpenRouter
+Claude
+Sentry
+PostHog
+OneSignal
+email provider
+
+Never commit:
+
+API keys
+private keys
+service account JSON
+Stripe secrets
+AI secrets
+
+==================================================
+59. FIREBASE PROJECT SETUP
+==================================================
+
+Create:
+
+firebase.json
+.firebaserc
+firestore.rules
+firestore.indexes.json
+storage.rules
+
+Cloud Functions structure:
+
+functions/
+
+  src/
+    auth/
+    players/
+    clubs/
+    matching/
+    safeguarding/
+    videos/
+    ai/
+    payments/
+    notifications/
+    admin/
+    gdpr/
+    analytics/
+    shared/
+
+Keep functions modular.
+
+==================================================
+60. CODE QUALITY
+==================================================
+
+Use strict TypeScript.
+
+Avoid:
+
+any
+duplicate code
+huge components
+business logic inside UI
+hardcoded secrets
+hardcoded user permissions
+hardcoded subscription logic
+
+Create reusable services.
+
+Example:
+
+playerService
+clubService
+matchingService
+safeguardingService
+videoService
+paymentService
+notificationService
+aiService
+adminService
+
+Use clear interfaces.
+
+==================================================
+61. ERROR HANDLING
+==================================================
+
+Every async operation needs:
+
+loading state
+success state
+error state
+retry where appropriate
+
+Never show raw backend errors to users.
+
+Use user-friendly error messages.
+
+Log detailed technical errors server-side.
+
+==================================================
+62. ACCESSIBILITY
+==================================================
+
+Target WCAG-friendly implementation.
+
+Use:
+
+semantic HTML
+keyboard navigation
+labels
+ARIA where necessary
+visible focus
+sufficient contrast
+screen-reader-friendly controls
+accessible dialogs
+accessible forms
+
+==================================================
+63. RESPONSIVE DESIGN
+==================================================
+
+Desktop:
+
+sidebar + content
+
+Tablet:
+
+collapsible sidebar
+
+Mobile:
+
+bottom navigation or mobile sidebar
+
+Tables must transform into cards where appropriate.
+
+Search/filter interfaces must work properly on mobile.
+
+==================================================
+64. EMPTY STATES
+==================================================
+
+Every major section needs useful empty states.
+
+Example:
+
+No applications yet.
+No videos uploaded.
+No matches yet.
+No shortlisted players.
+No trials scheduled.
+No squad gaps detected.
+No notifications.
+
+Provide meaningful CTAs.
+
+==================================================
+65. LOADING STATES
+==================================================
+
+Use skeletons instead of blank pages.
+
+Examples:
+
+ProfileSkeleton
+PlayerCardSkeleton
+DashboardSkeleton
+SearchSkeleton
+VideoSkeleton
+TableSkeleton
+
+==================================================
+66. SECURITY UI
+==================================================
+
+Show:
+
+Verified Club
+Youth Verified
+Consent Pending
+Consent Granted
+Verification Expired
+AI-assisted
+
+Never expose sensitive internal security information to normal users.
+
+==================================================
+67. ADMIN MATCHING CONFIGURATION
+==================================================
+
+Admin can view current matching weights.
+
+Admin can change:
+
+position
+distance
+level
+attributes
+availability
+boost
+
+Before saving:
+
+validate total = 100%.
+
+Create a new configuration version.
+
+Never modify historical match scores silently.
+
+Existing match results should retain:
+
+configVersion
+
+Provide recalculation controls.
+
+==================================================
+68. MATCH EXPLANATION UI
+==================================================
+
+Player/club can see transparent score breakdown.
+
+Example:
+
+Position compatibility: 30%
+Distance: 12%
+Playing level: 17%
+Attributes: 15%
+Availability: 8%
+Boost: 5%
+
+Show actual contribution rather than misleading generic text.
+
+AI is NOT required for this explanation.
+
+==================================================
+69. AI COST MANAGEMENT
+==================================================
+
+Implement:
+
+request deduplication
+content hashing
+result caching
+rate limiting
+token limits
+structured output
+timeouts
+retry limits
+
+Track:
+
+provider
+model
+feature
+input tokens if available
+output tokens if available
+estimated cost
+userId/clubId where appropriate
+createdAt
+
+Admin dashboard must show AI usage.
+
+==================================================
+70. AI PROVIDER ABSTRACTION
+==================================================
+
+Create:
+
+AIProvider interface
+
+Example:
+
+generateStructured<T>(request): Promise<T>
+
+Implement providers:
+
+ClaudeProvider
+OpenRouterProvider
+
+Configuration:
+
+AI_PROVIDER=claude
+or
+AI_PROVIDER=openrouter
+
+The rest of the application must not care which provider is used.
+
+==================================================
+71. PRODUCTION DEPLOYMENT
+==================================================
+
+Frontend:
+
+Firebase Hosting
+
+Backend:
+
+Firebase Cloud Functions
+
+Heavy processing:
+
+Cloud Run if required
+
+Database:
+
+Firestore
+
+Storage:
+
+Firebase Storage
+
+Set up separate:
+
+development
+staging
+production
+
+Never mix production and development Firebase projects.
+
+==================================================
+72. CI/CD
+==================================================
+
+Create GitHub Actions.
+
+Pipeline:
+
+install
+lint
+typecheck
+unit tests
+security rule tests
+build
+deploy staging
+
+Production deployment must require explicit approval.
+
+==================================================
+73. FIREBASE INDEXES
+==================================================
+
+Create all required composite indexes.
+
+At minimum account for queries involving:
+
+clubId + position + matchScore
+clubId + ageBand + matchScore
+clubId + region + matchScore
+playerId + applicationStatus
+clubId + applicationStatus
+userId + createdAt
+status + createdAt
+verificationStatus + createdAt
+
+Do not blindly create indexes for every field.
+
+==================================================
+74. DATA MODEL RULE
+==================================================
+
+Do not create giant Firestore documents.
+
+Separate:
+
+profile
+private data
+guardian data
+verification data
+media metadata
+match data
+audit data
+
+This is especially important for youth data.
+
+==================================================
+75. PRIVATE VS PUBLIC PLAYER DATA
+==================================================
+
+PUBLIC PROFILE:
+
+display name
+position
+age band where appropriate
+headline statistics
+playing level
+availability summary
+approved videos
+approved AI tags
+region at appropriate granularity
+
+PRIVATE:
+
+email
+phone
+guardian data
+private notes
+internal moderation data
+exact sensitive information
+
+Never expose private fields in public search documents.
+
+==================================================
+76. CLUB PRIVACY
+==================================================
+
+Club internal data must remain private.
+
+Examples:
+
+private recruitment notes
+internal squad notes
+private staff information
+financial details
+private candidate notes
+
+Players only receive information explicitly intended for them.
+
+==================================================
+77. MESSAGING
+==================================================
+
+If messaging is included in the product scope:
+
+Create secure messaging between authorized users.
+
+Implement:
+
+conversations
+participants
+messages
+read state
+timestamps
+report/block functionality
+
+For youth:
+
+apply strict safeguarding restrictions.
+
+Do not allow arbitrary adult-to-youth communication outside approved workflows.
+
+==================================================
+78. SAFEGUARDING FIRST
+==================================================
+
+Treat youth safeguarding as a system-wide security requirement.
+
+It must not be a UI feature.
+
+Every relevant backend operation must evaluate:
+
+user role
+club verification
+verification expiry
+guardian relationship
+consent state
+searchability
+resource ownership
+
+If uncertain:
+
+DENY ACCESS.
+
+==================================================
+79. DATA RETENTION
+==================================================
+
+Create configurable retention policies.
+
+Do not permanently retain unnecessary media.
+
+When youth consent is withdrawn:
+
+delist immediately
+queue media deletion
+retain only legally required records
+audit the operation
+
+==================================================
+80. DOCUMENTATION
+==================================================
+
+Generate:
+
+README.md
+ARCHITECTURE.md
+FIREBASE_SETUP.md
+SECURITY.md
+DEPLOYMENT.md
+AI.md
+MATCHING_ENGINE.md
+SAFEGUARDING.md
+DATA_MODEL.md
+TESTING.md
+ADMIN_GUIDE.md
+
+Document:
+
+environment variables
+Firebase setup
+Firestore rules
+Storage rules
+indexes
+Cloud Functions
+Stripe configuration
+AI provider configuration
+deployment process
+
+==================================================
+81. DEVELOPMENT ORDER
+==================================================
+
+Implement in phases.
+
+PHASE 1 — FOUNDATION
+
+Authentication
+roles
+Firebase setup
+Firestore model
+security rules
+Storage rules
+React architecture
+routing
+design system
+admin/player/club portal shells
+CI/CD
+Sentry
+
+PHASE 2 — PLAYER + CLUB CORE
+
+player registration
+player profile
+profile completeness
+club onboarding
+club profile
+club verification
+matching configuration
+deterministic matching engine
+match results
+
+PHASE 3 — SEARCH + VIDEO + SAFEGUARDING
+
+club search
+filters
+ranked results
+player profiles
+video upload
+video processing
+FFmpeg
+AI video tagging
+guardian registration
+guardian consent
+youth verification
+consent audit
+youth security rules
+
+PHASE 4 — RECRUITMENT + PAYMENTS
+
+applications
+shortlists
+trials
+squad management
+squad gap analysis
+subscriptions
+boosts
+Stripe
+webhooks
+notifications
+
+PHASE 5 — HARDENING
+
+security audit
+load testing
+performance
+Firestore optimization
+AI cost optimization
+monitoring
+error handling
+GDPR
+production deployment
+documentation
+
+==================================================
+82. PHASE 2 FUTURE FEATURES
+==================================================
+
+Architect the application so these can be added without rewriting the core:
+
+Tactical Fit Explanations
+
+Career Pathway Insights
+
+Native mobile applications
+
+Advanced recruitment analytics
+
+Cohort analytics
+
+Bulk shortlists
+
+Comparative player analytics
+
+Proactive outreach suggestions
+
+League-specific matching configuration
+
+Referral system
+
+Academy partnerships
+
+College partnerships
+
+==================================================
+83. CRITICAL PRODUCT PRINCIPLE
+==================================================
+
+There are TWO completely separate intelligence systems.
+
+SYSTEM 1:
+
+DETERMINISTIC MATCHING
+
+Responsible for:
+
+player-club score
+search ranking
+match result
+match breakdown
+
+SYSTEM 2:
+
+AI ASSISTANCE
+
+Responsible for:
+
+squad gap analysis
+video descriptions
+player improvement recommendations
+future explainability features
+
+NEVER merge these systems.
+
+AI must NEVER modify:
+
+playerScores
+matchResults
+matching weights
+
+==================================================
+84. FIRESTORE SECURITY PRINCIPLE
+==================================================
+
+Security must remain correct even if someone completely bypasses the React application.
+
+Assume an attacker has:
+
+Firebase SDK
+browser DevTools
+network inspector
+modified JavaScript
+custom API client
+
+The attacker must still be unable to:
+
+access unauthorized youth data
+change their role
+change verification
+change consent
+change payment state
+change match scores
+write admin records
+read private club notes
+access private videos
+
+==================================================
+85. ACCEPTANCE CRITERIA
+==================================================
+
+The application is NOT complete until all of the following work.
+
+AUTH:
+
+Player can register.
+Club can register.
+Guardian can register.
+Admin can log in.
+Email verification works.
+Password reset works.
+Role protection works.
+
+PLAYER:
+
+Player can create profile.
+Player can edit profile.
+Profile completeness updates.
+Player can upload video.
+Player can see matches.
+Player can apply.
+Player receives notifications.
+
+CLUB:
+
+Club can register.
+Club can submit verification.
+Club can search players.
+Club can filter players.
+Club can see deterministic match score.
+Club can shortlist players.
+Club can create trials.
+Club can manage squad.
+Club can run squad gap analysis.
+
+YOUTH:
+
+Youth registration automatically detects minor.
+Profile starts hidden.
+Guardian receives consent request.
+Guardian grants consent.
+Youth becomes visible only to eligible clubs.
+Guardian can withdraw consent.
+Youth immediately disappears from search.
+Youth videos are protected.
+Youth AI processing is blocked without consent.
+
+AI:
+
+Video tags work.
+Tags are reviewable.
+Squad gap analysis works.
+Recommendations work.
+Caching works.
+Rate limiting works.
+AI cannot write match scores.
+
+PAYMENTS:
+
+Stripe checkout works.
+Subscription works.
+Boost works.
+Webhook works.
+Duplicate webhook is safely ignored.
+Payment state is synchronized.
+
+ADMIN:
+
+Admin can review clubs.
+Admin can review youth verification.
+Admin can manage moderation.
+Admin can inspect payments.
+Admin can inspect AI usage.
+Admin can inspect audit logs.
+Admin can manage matching configuration.
+Admin can process GDPR requests.
+
+SECURITY:
+
+Firestore rules tested.
+Storage rules tested.
+Cloud Functions authorization tested.
+Youth access tests pass.
+Role escalation tests pass.
+Payment manipulation tests pass.
+
+PERFORMANCE:
+
+Search is paginated.
+Match scores are precomputed.
+Videos use optimized versions.
+Images are optimized.
+AI results are cached.
+Firestore reads are minimized.
+
+==================================================
+86. FINAL IMPLEMENTATION RULE
+==================================================
+
+Work incrementally.
+
+Before implementing a feature:
+
+1. Understand its data model.
+2. Implement types.
+3. Implement validation.
+4. Implement service layer.
+5. Implement Firebase integration.
+6. Implement security rules.
+7. Implement Cloud Functions if required.
+8. Implement UI.
+9. Implement loading/error/empty states.
+10. Write tests.
+11. Verify end-to-end.
+
+Do not move to the next major module until the current module is functional.
+
+If a requirement is ambiguous:
+
+choose the safest production-grade implementation that preserves the product intent.
+
+Do not remove functionality merely because it is complex.
+
+Do not replace real functionality with mock data.
+
+==================================================
+87. DEFINITION OF DONE
+==================================================
+
+A feature is DONE only when:
+
+Frontend exists.
+Backend exists where required.
+Firestore model exists.
+Security rules exist.
+Validation exists.
+Error handling exists.
+Loading states exist.
+Empty states exist.
+Tests exist.
+Audit requirements exist.
+Mobile UI works.
+Desktop UI works.
+Production deployment works.
+
+The final application must be a cohesive production-ready GROUNDWORK platform, not a collection of disconnected screens.
+
+START BY:
+
+1. auditing the existing repository
+2. identifying what already exists
+3. creating the architecture
+4. setting up Firebase
+5. creating the data model
+6. creating security rules
+7. creating the application shell
+8. implementing authentication
+9. implementing roles
+10. then proceeding through the phases above
+
+Do not destroy working existing functionality.
+
+If an existing repository already has a design, preserve useful existing UI while bringing it to the quality level defined above.
+
+At every stage, keep the project runnable.
+
+When implementation is complete, provide:
+
+- architecture summary
+- Firebase collections
+- security model
+- Cloud Functions list
+- routes list
+- environment variables
+- test results
+- deployment instructions
+- known limitations
+- production readiness checklist

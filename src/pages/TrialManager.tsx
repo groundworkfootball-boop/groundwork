@@ -151,7 +151,7 @@ export const TrialManager = () => {
   const inputCls = 'w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-brand transition-colors';
 
   return (
-    <div className="max-w-7xl mx-auto h-full flex flex-col pb-20">
+    <div className="w-full flex flex-col pb-20">
       {/* Header */}
       <div className="flex justify-between items-center mb-8">
         <div>

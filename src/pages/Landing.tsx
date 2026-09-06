@@ -1,18 +1,29 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 export const Landing = () => {
+  const { isAuthenticated } = useAuth();
+
   return (
     <div className="min-h-screen bg-dark-bg text-text-primary flex flex-col font-sans">
       <header className="px-8 py-6 flex justify-between items-center border-b border-dark-border/50 bg-dark-bg/80 backdrop-blur-md sticky top-0 z-50">
         <h1 className="text-brand font-black text-2xl tracking-tighter uppercase">Groundwork</h1>
         <div className="space-x-4">
-          <Link to="/login" className="px-4 py-2 text-sm font-medium hover:text-brand transition-colors border border-transparent">
-            LOGIN
-          </Link>
-          <Link to="/register" className="px-5 py-2 text-sm font-bold bg-brand text-dark-bg rounded hover:bg-brand-hover transition-colors">
-            JOIN NOW
-          </Link>
+          {isAuthenticated ? (
+            <Link to="/dashboard" className="px-5 py-2 text-sm font-bold bg-brand text-dark-bg rounded hover:bg-brand-hover transition-colors">
+              DASHBOARD
+            </Link>
+          ) : (
+            <>
+              <Link to="/login" className="px-4 py-2 text-sm font-medium hover:text-brand transition-colors border border-transparent">
+                LOGIN
+              </Link>
+              <Link to="/register" className="px-5 py-2 text-sm font-bold bg-brand text-dark-bg rounded hover:bg-brand-hover transition-colors">
+                JOIN NOW
+              </Link>
+            </>
+          )}
         </div>
       </header>
 

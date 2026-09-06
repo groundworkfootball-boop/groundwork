@@ -216,6 +216,26 @@ export const Applications = () => {
                         </div>
                       </div>
                     )}
+                    
+                    {role === 'player' && app.status === 'trial_invited' && (
+                      <div>
+                        <p className="text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Respond to Invitation</p>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => updateStatus(app.id, 'accepted')}
+                            className="px-4 py-1.5 bg-green-500/10 border border-green-500/30 text-green-400 text-xs font-bold uppercase tracking-widest rounded transition-colors hover:bg-green-500/20"
+                          >
+                            Accept Trial
+                          </button>
+                          <button
+                            onClick={() => updateStatus(app.id, 'rejected')}
+                            className="px-4 py-1.5 bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-bold uppercase tracking-widest rounded transition-colors hover:bg-red-500/20"
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

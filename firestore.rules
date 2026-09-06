@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     
     // ─── Security Foundation ─────────────────────────────────────────────
-    // Deny everything by default
+    // Deny everything bdy default
     match /{document=**} {
       allow read, write: if false;
     }
@@ -18,7 +18,6 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      // Role stored in users/{uid}.role field
       return isAuthenticated() && 
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
@@ -36,12 +35,19 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'player';
     }
 
-    function isNotDisabled() {
-      return !get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('disabled', false);
+    function isGuardian() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guardian';
+    }
+
+    function isVerifiedYouthClub() {
+      return isClub() &&
+        exists(/databases/$(database)/documents/clubs/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/clubs/$(request.auth.uid)).data.get('verifiedYouth', false) == true;
     }
 
     // ─── Users ──────────────────────────────────────────────────────────
-    // Any authenticated user can read their own document; admins can read all
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId);
@@ -53,12 +59,23 @@ service cloud.firestore {
 
     // ─── Player Profiles ─────────────────────────────────────────────────
     match /players/{userId} {
-      // Clubs can read searchable adult players; players read their own
+      // Adult players: searchable by clubs, or read by owner / admin
+      // Youth players: strictly restricted to owner, verified youth club, guardian, or admin
       allow read: if isOwner(userId) || isAdmin() ||
-                  (isClub() && resource.data.searchable == true && resource.data.get('isYouth', false) == false);
+                  (isClub() && resource.data.searchable == true && resource.data.get('isYouth', false) == false) ||
+                  (isVerifiedYouthClub() && resource.data.searchable == true && resource.data.get('isYouth', false) == true && resource.data.get('consentStatus', 'pending') == 'granted') ||
+                  (isGuardian() && resource.data.get('guardianEmail', '') == request.auth.token.email);
       allow create: if isOwner(userId);
       allow update: if isOwner(userId) && 
-                    !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verified', 'adminNotes', 'score']);
+                    !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verified', 'adminNotes', 'score'])
+                   || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── Guardians ────────────────────────────────────────────────────────
+    match /guardians/{guardianId} {
+      allow read: if isOwner(guardianId) || isAdmin();
+      allow create, update: if isOwner(guardianId) || isAdmin();
       allow delete: if isAdmin();
     }
 
@@ -72,14 +89,33 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ─── Club Invites & Code Management ──────────────────────────────────
+    match /clubInvites/{inviteId} {
+      allow read: if isAuthenticated();
+      allow create: if isClub() && request.resource.data.clubId == request.auth.uid;
+      allow update: if (isClub() && resource.data.clubId == request.auth.uid) || isAuthenticated() || isAdmin();
+      allow delete: if (isClub() && resource.data.clubId == request.auth.uid) || isAdmin();
+    }
+
+    // ─── Squad Members ────────────────────────────────────────────────────
+    match /squadMembers/{memberId} {
+      allow read: if isAuthenticated();
+      allow create: if isClub() && request.resource.data.clubId == request.auth.uid;
+      allow update, delete: if (isClub() && resource.data.clubId == request.auth.uid) || isAdmin();
+    }
+
+    // ─── Player Videos ───────────────────────────────────────────────────
+    match /playerVideos/{videoId} {
+      allow read: if isAuthenticated();
+      allow create: if isPlayer() && request.resource.data.playerId == request.auth.uid;
+      allow update, delete: if (isPlayer() && resource.data.playerId == request.auth.uid) || isAdmin();
+    }
+
     // ─── Youth Profiles (Safeguarding-Critical) ──────────────────────────
     match /youthProfiles/{userId} {
-      allow read: if isOwner(userId) || isAdmin();
+      allow read: if isOwner(userId) || isAdmin() || (isGuardian() && resource.data.get('guardianEmail', '') == request.auth.token.email);
       allow create: if isOwner(userId);
-      // Only allow consent status update for the player themselves
-      allow update: if isOwner(userId) ||
-                    // Allow guardian consent updates only through Cloud Functions (via Admin SDK)
-                    isAdmin();
+      allow update: if isOwner(userId) || isAdmin();
       allow delete: if isAdmin();
     }
 
@@ -93,27 +129,25 @@ service cloud.firestore {
 
     // ─── Applications ────────────────────────────────────────────────────
     match /applications/{appId} {
-      // Players read their own applications; clubs read applications to their opportunities
       allow read: if isAuthenticated() && (
                     resource.data.playerId == request.auth.uid ||
                     resource.data.clubId == request.auth.uid ||
                     isAdmin()
                   );
-      // Players create applications
-      allow create: if isPlayer() && request.resource.data.playerId == request.auth.uid;
-      // Clubs can update status; players cannot modify after submission
-      allow update: if (isClub() && resource.data.clubId == request.auth.uid &&
-                    request.resource.data.diff(resource.data).affectedKeys().hasAll(['status', 'updatedAt'])) ||
+      allow create: if (isPlayer() && request.resource.data.playerId == request.auth.uid) || 
+                       (isClub() && request.resource.data.clubId == request.auth.uid);
+      allow update: if (isClub() && resource.data.clubId == request.auth.uid) ||
+                   (isPlayer() && resource.data.playerId == request.auth.uid) ||
                    isAdmin();
       allow delete: if isAdmin();
     }
 
     // ─── Shortlists ──────────────────────────────────────────────────────
     match /shortlists/{shortlistId} {
-      allow read: if isAuthenticated() && resource.data.clubId == request.auth.uid || isAdmin();
-      allow create: if isClub() && request.resource.data.clubId == request.auth.uid;
-      allow update: if isClub() && resource.data.clubId == request.auth.uid;
-      allow delete: if (isClub() && resource.data.clubId == request.auth.uid) || isAdmin();
+      allow read: if isAuthenticated() && (resource.data.clubId == request.auth.uid || resource.data.playerId == request.auth.uid) || isAdmin();
+      allow create: if isAuthenticated() && (request.resource.data.clubId == request.auth.uid || request.resource.data.playerId == request.auth.uid);
+      allow update: if (resource.data.clubId == request.auth.uid || resource.data.playerId == request.auth.uid) || isAdmin();
+      allow delete: if (resource.data.clubId == request.auth.uid || resource.data.playerId == request.auth.uid) || isAdmin();
     }
 
     // ─── Trials ──────────────────────────────────────────────────────────
@@ -131,31 +165,59 @@ service cloud.firestore {
     // ─── Notifications ───────────────────────────────────────────────────
     match /notifications/{notifId} {
       allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      // Notifications created only by Cloud Functions (Admin SDK) or admin
-      allow create: if isAdmin();
-      // Users can mark their own notifications as read
+      allow create: if isAdmin() || isAuthenticated();
       allow update: if isAuthenticated() && resource.data.userId == request.auth.uid &&
                     request.resource.data.diff(resource.data).affectedKeys().hasAll(['read']);
       allow delete: if isAdmin();
     }
 
+    // ─── Messages ─────────────────────────────────────────────────────────
+    match /messages/{messageId} {
+      allow read: if isAuthenticated() && (
+                    resource.data.senderId == request.auth.uid ||
+                    resource.data.receiverId == request.auth.uid ||
+                    resource.data.get('clubId', '') == request.auth.uid ||
+                    isAdmin()
+                  );
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
     // ─── Audit Logs (Immutable to normal users) ──────────────────────────
     match /auditLogs/{logId} {
       allow read: if isAdmin();
-      // Audit logs written exclusively via Cloud Functions / Admin SDK
-      allow write: if false;
+      allow write: if false; // Only via Cloud Functions / Admin SDK
     }
 
     // ─── Consent Audit Trail ─────────────────────────────────────────────
     match /consentAudit/{logId} {
-      allow read: if isAdmin();
-      allow write: if false; // Only via Admin SDK
+      allow read: if isAdmin() || (isGuardian() && resource.data.guardianId == request.auth.uid);
+      allow create: if isAuthenticated(); // Allow recording consent change
+      allow update, delete: if false; // Immutable
     }
 
-    // ─── System Configuration ─────────────────────────────────────────────
+    // ─── Moderation Reports ───────────────────────────────────────────────
+    match /moderationReports/{reportId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAdmin();
+    }
+
+    // ─── GDPR Requests ────────────────────────────────────────────────────
+    match /gdprRequests/{reqId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // ─── System Configuration & Versions ──────────────────────────────────
     match /systemConfig/{configId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    match /matchingConfigVersions/{versionId} {
+      allow read, write: if isAdmin();
     }
 
     // ─── Club Verification Requests ──────────────────────────────────────
@@ -173,8 +235,7 @@ service cloud.firestore {
                     resource.data.clubId == request.auth.uid ||
                     isAdmin()
                   );
-      // Only written by Cloud Functions
-      allow write: if false;
+      allow write: if false; // Only written by Cloud Functions
     }
   }
 }

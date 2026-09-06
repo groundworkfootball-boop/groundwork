@@ -48,6 +48,9 @@ export const Register = () => {
         setIsYouth(false);
         handleSubmit(false);
       }
+    } else if (step === 2 && role === 'guardian') {
+      setIsYouth(false);
+      handleSubmit(false);
     } else {
       handleSubmit(false);
     }
@@ -129,7 +132,7 @@ export const Register = () => {
                 Select your account type
               </label>
 
-              {(['player', 'club'] as Role[]).map((r) => (
+              {(['player', 'guardian', 'club'] as Role[]).map((r) => (
                 <button
                   key={r}
                   type="button"
@@ -145,12 +148,14 @@ export const Register = () => {
                   </div>
                   <div>
                     <h4 className={`font-bold uppercase tracking-tight ${role === r ? 'text-brand' : 'text-text-primary'}`}>
-                      {r === 'player' ? 'Player Pathway' : 'Club Command'}
+                      {r === 'player' ? 'Player Pathway' : r === 'guardian' ? 'Guardian Portal' : 'Club Command'}
                     </h4>
                     <p className="text-xs text-text-secondary mt-1">
                       {r === 'player'
                         ? 'Create a data profile, apply for trials, and get scouted.'
-                        : 'Post opportunities, scout players, and manage trials.'}
+                        : r === 'guardian'
+                          ? 'Manage consent, review youth privacy, and oversee safeguarding.'
+                          : 'Post opportunities, scout players, and manage trials.'}
                     </p>
                   </div>
                 </button>
@@ -171,14 +176,14 @@ export const Register = () => {
             <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
               <div>
                 <label className="block text-xs font-bold text-text-secondary tracking-widest uppercase mb-2">
-                  {role === 'club' ? 'Club Name' : 'Full Name'}
+                  {role === 'club' ? 'Club Name' : role === 'guardian' ? 'Guardian Name' : 'Full Name'}
                 </label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className={inputClass}
-                  placeholder={role === 'club' ? 'Club name' : 'Your full name'}
+                  placeholder={role === 'club' ? 'Club name' : role === 'guardian' ? 'Guardian name' : 'Your full name'}
                   required
                 />
               </div>
@@ -197,6 +202,12 @@ export const Register = () => {
                     max={new Date().toISOString().split('T')[0]}
                   />
                   <p className="text-[10px] text-text-secondary mt-1">Players under 18 require guardian consent.</p>
+                </div>
+              )}
+
+              {role === 'guardian' && (
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300">
+                  Guardian accounts are used to manage youth consent and safeguarding workflows. A youth profile can be linked after account creation.
                 </div>
               )}
 

@@ -1,8 +1,20 @@
 import { useEffect, useState } from 'react';
-import { ShieldAlert, Users, FileText, Activity, Loader2, AlertCircle } from 'lucide-react';
+import {
+  ShieldAlert,
+  ShieldCheck,
+  Users,
+  Building2,
+  FileText,
+  Activity,
+  Loader2,
+  Sliders,
+  Sparkles,
+  CheckCircle2,
+  Lock,
+} from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { db } from '../../lib/firebase';
-import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit, where } from 'firebase/firestore';
 
 interface AuditEntry {
   id: string;
@@ -12,11 +24,24 @@ interface AuditEntry {
   timestamp?: { seconds: number };
 }
 
+interface PendingClub {
+  id: string;
+  name: string;
+  region?: string;
+  verificationStatus?: string;
+  verifiedAdult?: boolean;
+  verifiedYouth?: boolean;
+}
+
 interface Stats {
   totalUsers: number;
   totalClubs: number;
   pendingVerifications: number;
   totalOpportunities: number;
+  totalPlayers: number;
+  youthPlayers: number;
+  adultPlayers: number;
+  totalAuditLogs: number;
 }
 
 function formatTimeAgo(entry: AuditEntry): string {
@@ -29,35 +54,68 @@ function formatTimeAgo(entry: AuditEntry): string {
 }
 
 export const AdminDashboard = () => {
-  const [stats, setStats] = useState<Stats>({ totalUsers: 0, totalClubs: 0, pendingVerifications: 0, totalOpportunities: 0 });
+  const [stats, setStats] = useState<Stats>({
+    totalUsers: 0,
+    totalClubs: 0,
+    pendingVerifications: 0,
+    totalOpportunities: 0,
+    totalPlayers: 0,
+    youthPlayers: 0,
+    adultPlayers: 0,
+    totalAuditLogs: 0,
+  });
+  const [pendingClubs, setPendingClubs] = useState<PendingClub[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      setFetchError(null);
       try {
-        const [usersSnap, clubsSnap, verSnap, oppsSnap, logsSnap] = await Promise.all([
+        const [usersSnap, clubsSnap, verSnap, oppsSnap, playersSnap, logsSnap] = await Promise.all([
           getDocs(collection(db, 'users')),
           getDocs(collection(db, 'clubs')),
-          getDocs(query(collection(db, 'clubVerificationRequests'))),
+          getDocs(query(collection(db, 'clubs'), where('verificationStatus', '==', 'pending'))),
           getDocs(collection(db, 'opportunities')),
-          getDocs(query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'), limit(5))),
+          getDocs(collection(db, 'players')),
+          getDocs(query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'), limit(6))),
         ]);
+
+        let youthCount = 0;
+        let adultCount = 0;
+        playersSnap.docs.forEach((d) => {
+          if (d.data().isYouth) {
+            youthCount++;
+          } else {
+            adultCount++;
+          }
+        });
 
         setStats({
           totalUsers: usersSnap.size,
           totalClubs: clubsSnap.size,
           pendingVerifications: verSnap.size,
           totalOpportunities: oppsSnap.size,
+          totalPlayers: playersSnap.size,
+          youthPlayers: youthCount,
+          adultPlayers: adultCount,
+          totalAuditLogs: (await getDocs(collection(db, 'auditLogs'))).size,
         });
+
+        setPendingClubs(
+          verSnap.docs.map((d) => ({
+            id: d.id,
+            name: d.data().name || 'Club Verification Request',
+            region: d.data().region,
+            verificationStatus: d.data().verificationStatus,
+            verifiedAdult: d.data().verifiedAdult,
+            verifiedYouth: d.data().verifiedYouth,
+          }))
+        );
 
         setAuditLogs(logsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as AuditEntry)));
       } catch (err) {
         console.error('Admin dashboard error:', err);
-        setFetchError('Failed to load admin data. Check your connection and permissions.');
       } finally {
         setLoading(false);
       }
@@ -67,130 +125,188 @@ export const AdminDashboard = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="min-h-[60vh] flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-brand animate-spin" />
       </div>
     );
   }
 
-  if (fetchError) {
-    return (
-      <div className="max-w-6xl mx-auto">
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 flex items-center space-x-3">
-          <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
-          <p className="text-red-400 text-sm">{fetchError}</p>
+  return (
+    <div className="space-y-8 max-w-7xl mx-auto pb-12">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-brand font-bold text-xs uppercase tracking-widest">Master Command Center</span>
+            <span className="px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-[10px] font-bold">
+              PLATFORM ADMINISTRATOR
+            </span>
+          </div>
+          <h1 className="text-3xl font-black uppercase text-white tracking-tight">System Administration</h1>
+          <p className="text-sm text-slate-400">
+            Oversee platform compliance, club verifications, youth safeguarding, deterministic matching, and security.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Link
+            to="/dashboard/admin/matching-config"
+            className="bg-brand hover:bg-brand-hover text-black font-bold px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 text-sm shadow-lg shadow-brand/20"
+          >
+            <Sliders className="w-4 h-4" />
+            <span>Matching Config</span>
+          </Link>
         </div>
       </div>
-    );
-  }
 
-  const statCards = [
-    { label: 'Total Users', value: stats.totalUsers, icon: Users, color: 'text-brand', bg: 'bg-brand/10' },
-    { label: 'Total Clubs', value: stats.totalClubs, icon: Activity, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-    { label: 'Pending Verifications', value: stats.pendingVerifications, icon: ShieldAlert, color: 'text-red-400', bg: 'bg-red-500/10' },
-    { label: 'Opportunities', value: stats.totalOpportunities, icon: FileText, color: 'text-purple-400', bg: 'bg-purple-500/10' },
-  ];
+      {/* Primary KPI Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs uppercase font-bold tracking-wider">Total Users</span>
+            <Users className="w-4 h-4 text-brand" />
+          </div>
+          <div>
+            <p className="text-3xl font-black text-white">{stats.totalUsers}</p>
+            <p className="text-[11px] text-slate-400 mt-1">Platform Registrations</p>
+          </div>
+        </div>
 
-  const quickActions = [
-    { label: 'Manage Users', to: '/users', icon: Users },
-    { label: 'Club Verifications', to: '/users', icon: ShieldAlert },
-    { label: 'Audit Logs', to: '/audit-logs', icon: FileText },
-    { label: 'System Config', to: '/system-config', icon: Activity },
-  ];
+        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs uppercase font-bold tracking-wider">Total Clubs</span>
+            <Building2 className="w-4 h-4 text-blue-400" />
+          </div>
+          <div>
+            <p className="text-3xl font-black text-white">{stats.totalClubs}</p>
+            <p className="text-[11px] text-slate-400 mt-1">Recruiting Entities</p>
+          </div>
+        </div>
 
-  return (
-    <div className="max-w-6xl mx-auto">
-      <div className="mb-8">
-        <h3 className="text-3xl font-bold tracking-tight">System Administration</h3>
-        <p className="text-text-secondary text-sm mt-1">Platform overview and management tools.</p>
+        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs uppercase font-bold tracking-wider">Pending Verification</span>
+            <ShieldAlert className="w-4 h-4 text-amber-400" />
+          </div>
+          <div>
+            <p className="text-3xl font-black text-amber-400">{stats.pendingVerifications}</p>
+            <p className="text-[11px] text-slate-400 mt-1">Requires Admin Action</p>
+          </div>
+        </div>
+
+        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5 flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-400 mb-2">
+            <span className="text-xs uppercase font-bold tracking-wider">Players Roster</span>
+            <Activity className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div>
+            <p className="text-3xl font-black text-white">{stats.totalPlayers}</p>
+            <p className="text-[11px] text-slate-400 mt-1">
+              {stats.adultPlayers} Adult • {stats.youthPlayers} Youth
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* KPI Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        {statCards.map(({ label, value, icon: Icon, color, bg }) => (
-          <div key={label} className="bg-dark-surface p-6 rounded-xl border border-dark-border shadow-lg">
-            <div className="flex items-center space-x-3 mb-3">
-              <div className={`p-2 ${bg} rounded-lg`}>
-                <Icon className={`w-5 h-5 ${color}`} />
-              </div>
-              <span className="font-semibold text-sm text-text-secondary">{label}</span>
-            </div>
-            <div className="text-3xl font-bold">{value}</div>
-          </div>
+      {/* Operational Modules Quick Access Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+        {[
+          { label: 'Users Directory', to: '/dashboard/users', icon: Users },
+          { label: 'Club Verification', to: '/dashboard/admin/clubs', icon: Building2 },
+          { label: 'Youth Safeguarding', to: '/dashboard/admin/youth-verification', icon: ShieldCheck },
+          { label: 'Matching Weights', to: '/dashboard/admin/matching-config', icon: Sliders },
+          { label: 'AI Management', to: '/dashboard/admin/ai', icon: Sparkles },
+          { label: 'GDPR / Privacy', to: '/dashboard/admin/gdpr', icon: Lock },
+        ].map((mod) => (
+          <Link
+            key={mod.label}
+            to={mod.to}
+            className="p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-brand/30 hover:bg-brand/5 transition-all text-center flex flex-col items-center justify-center gap-2 group"
+          >
+            <mod.icon className="w-5 h-5 text-slate-400 group-hover:text-brand transition-colors" />
+            <span className="text-xs font-bold text-white leading-tight">{mod.label}</span>
+          </Link>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Audit Logs */}
-        <div>
-          <h4 className="text-xl font-bold mb-4 flex items-center space-x-2">
-            <FileText className="w-5 h-5 text-brand" />
-            <span>Recent Audit Logs</span>
-          </h4>
-          <div className="bg-dark-surface border border-dark-border rounded-xl overflow-hidden">
-            {auditLogs.length === 0 ? (
-              <div className="p-8 text-center text-text-secondary text-sm">
-                <FileText className="w-10 h-10 text-text-secondary/30 mx-auto mb-3" />
-                <p>No audit log entries yet.</p>
-                <p className="text-xs mt-1 text-text-secondary/60">Admin actions will be recorded here.</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-dark-border">
-                {auditLogs.map((log) => (
-                  <div key={log.id} className="flex justify-between items-center text-sm p-4">
-                    <div>
-                      <p className="font-medium">{log.action}</p>
-                      <p className="text-xs text-text-secondary">{log.actorId ?? 'System'}</p>
-                    </div>
-                    <span className="text-xs text-text-secondary">{formatTimeAgo(log)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <Link to="/audit-logs" className="block text-center mt-3 text-xs text-brand font-bold uppercase tracking-wider hover:underline">
-            View All Audit Logs →
-          </Link>
-        </div>
-
-        {/* Quick Actions */}
-        <div>
-          <h4 className="text-xl font-bold mb-4">Quick Actions</h4>
-          <div className="bg-dark-surface border border-dark-border rounded-xl p-6">
-            <div className="grid grid-cols-2 gap-4">
-              {quickActions.map(({ label, to, icon: Icon }) => (
-                <Link
-                  key={label}
-                  to={to}
-                  className="p-4 bg-dark-bg border border-dark-border rounded-lg hover:border-brand/50 hover:text-brand transition-colors text-left flex flex-col gap-2 group"
-                >
-                  <Icon className="w-6 h-6 text-brand" />
-                  <span className="font-semibold text-sm">{label}</span>
-                </Link>
-              ))}
+      {/* Main Grid: Pending Verifications & Real-Time Audit Logs */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left 2 Cols: Pending Club Verifications Queue */}
+        <div className="lg:col-span-2 bg-slate-900/80 border border-white/10 rounded-3xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-amber-400" />
+              <h2 className="text-lg font-bold text-white">Club Verification Queue</h2>
             </div>
+            <Link to="/dashboard/admin/clubs" className="text-xs text-brand hover:underline font-semibold">
+              Manage All
+            </Link>
           </div>
 
-          {/* System status */}
-          <div className="bg-dark-surface border border-dark-border rounded-xl p-6 mt-6">
-            <h4 className="font-bold text-sm uppercase tracking-widest mb-4 text-text-secondary">System Status</h4>
+          {pendingClubs.length === 0 ? (
+            <div className="py-12 text-center text-slate-400">
+              <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-400 mb-3" />
+              <p className="text-sm font-medium">All club verification requests have been processed.</p>
+              <p className="text-xs text-slate-500 mt-1">No pending applications in the queue.</p>
+            </div>
+          ) : (
             <div className="space-y-3">
-              {[
-                { label: 'Firebase Auth', status: 'Operational' },
-                { label: 'Firestore', status: 'Operational' },
-                { label: 'Firebase Storage', status: 'Operational' },
-                { label: 'Claude AI', status: 'Not Configured' },
-                { label: 'Stripe Payments', status: 'Not Configured' },
-              ].map(({ label, status }) => (
-                <div key={label} className="flex justify-between items-center text-sm">
-                  <span className="text-text-secondary">{label}</span>
-                  <span className={`text-xs font-bold ${status === 'Operational' ? 'text-brand' : 'text-text-secondary'}`}>
-                    {status}
-                  </span>
+              {pendingClubs.map((cl) => (
+                <div
+                  key={cl.id}
+                  className="p-4 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-between gap-4"
+                >
+                  <div>
+                    <h3 className="font-bold text-white text-sm">{cl.name}</h3>
+                    <p className="text-xs text-slate-400">
+                      Region: {cl.region || 'UK Regional'} • Status: <span className="text-amber-400 capitalize">{cl.verificationStatus}</span>
+                    </p>
+                  </div>
+
+                  <Link
+                    to="/dashboard/admin/clubs"
+                    className="bg-brand hover:bg-brand-hover text-black font-bold px-3 py-1.5 rounded-xl text-xs transition-all"
+                  >
+                    Review Documents
+                  </Link>
                 </div>
               ))}
             </div>
+          )}
+        </div>
+
+        {/* Right Col: Recent System Audit Trail */}
+        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-brand" />
+              <h2 className="text-lg font-bold text-white">Audit Trail</h2>
+            </div>
+            <Link to="/dashboard/audit-logs" className="text-xs text-brand hover:underline font-semibold">
+              View All
+            </Link>
           </div>
+
+          {auditLogs.length === 0 ? (
+            <div className="py-12 text-center text-slate-400">
+              <FileText className="w-10 h-10 mx-auto text-slate-600 mb-3" />
+              <p className="text-xs">No recent administrative audits logged.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {auditLogs.map((log) => (
+                <div key={log.id} className="p-3 rounded-xl bg-white/5 border border-white/5 text-xs space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono font-bold text-white capitalize">{log.action.replace('_', ' ')}</span>
+                    <span className="text-slate-400 text-[11px]">{formatTimeAgo(log)}</span>
+                  </div>
+                  <p className="text-slate-400 truncate">
+                    Actor: <span className="text-slate-300 font-mono">{log.actorId || 'System Worker'}</span>
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
