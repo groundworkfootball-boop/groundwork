@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
 import { db } from '../../lib/firebase';
 import { collection, getDocs, doc, updateDoc, serverTimestamp, query, limit } from 'firebase/firestore';
 import type { ModerationReportRecord } from '../../app/types';
-import { ShieldAlert, CheckCircle2, XCircle, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 
 export const ModerationPage = () => {
-  const { user } = useAuth();
   const { success, error: toastError } = useToast();
 
   const [reports, setReports] = useState<ModerationReportRecord[]>([]);

@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
 import { db } from '../../lib/firebase';
 import { collection, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import type { PlayerRecord } from '../../app/types';
-import { Users, ShieldCheck, ShieldAlert, Eye, EyeOff, Loader2, RefreshCw } from 'lucide-react';
+import { Users, Eye, EyeOff, Loader2, RefreshCw } from 'lucide-react';
 
 export const PlayersPage = () => {
-  const { user } = useAuth();
   const { success, error: toastError } = useToast();
 
   const [players, setPlayers] = useState<PlayerRecord[]>([]);

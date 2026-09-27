@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
 import { db } from '../../lib/firebase';
 import { doc, getDoc, setDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { Sliders, CheckCircle2, AlertCircle, Save, RefreshCw, Loader2, Info } from 'lucide-react';
+import { AlertCircle, Save, RefreshCw, Loader2, Info } from 'lucide-react';
 import type { MatchingConfigRecord } from '../../app/types';
 
 export const MatchingConfigPage = () => {
-  const { user } = useAuth();
   const { success, error: toastError } = useToast();
 
   const [loading, setLoading] = useState(true);
@@ -87,7 +85,7 @@ export const MatchingConfigPage = () => {
       await addDoc(collection(db, 'matchingConfigVersions'), {
         ...configPayload,
         createdAt: serverTimestamp(),
-        authorId: user?.uid,
+        authorId: 'admin-ui',
       });
 
       setVersion(newVersion);

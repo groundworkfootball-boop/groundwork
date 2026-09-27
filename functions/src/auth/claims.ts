@@ -1,5 +1,5 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
-import { adminAuth, adminDb } from '../shared/firebaseAdmin';
+import { adminAuth, adminDb } from '../shared/firebaseAdmin.js';
 
 export const setUserRoleClaims = onCall(async (request) => {
   if (request.auth?.token.role !== 'admin' && request.auth?.token.isSuperAdmin !== true) {

@@ -1,10 +1,6 @@
 import { useState } from 'react';
-import { DollarSign, CreditCard, CheckCircle2, ArrowUpRight, ShieldCheck, RefreshCw } from 'lucide-react';
-import { useToast } from '../../lib/toast';
 
 export const PaymentsPage = () => {
-  const { success } = useToast();
-
   const [transactions] = useState([
     {
       id: 'ch_3M4j182k9',

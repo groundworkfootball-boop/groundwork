@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { db } from '../../lib/firebase';
-import { collection, getDocs, limit, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, limit, query } from 'firebase/firestore';
 import type { ConsentAuditRecord } from '../../app/types';
-import { ShieldCheck, FileText, Loader2, RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 
 export const ConsentManagementPage = () => {
   const [logs, setLogs] = useState<ConsentAuditRecord[]>([]);

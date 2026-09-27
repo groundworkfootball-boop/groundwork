@@ -31,9 +31,9 @@ export function isValidClubCode(code: string): boolean {
 }
 
 // Build the public registration / claim URL
-export function getClubInviteUrl(clubCode: string, role = 'player'): string {
+export function getClubInviteUrl(clubCode: string): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://groundwork.football';
-  return `${origin}/register?clubCode=${encodeURIComponent(clubCode)}&role=${role}`;
+  return `${origin}/register?clubCode=${encodeURIComponent(clubCode)}`;
 }
 
 export interface ShareContent {
@@ -44,7 +44,7 @@ export interface ShareContent {
 }
 
 // Pre-formatted messages for invitations
-export function buildInviteMessage({ clubName, clubCode, inviteUrl, role = 'player' }: ShareContent): string {
+export function buildInviteMessage({ clubName, clubCode, inviteUrl }: ShareContent): string {
   return `⚽ You've been invited to join ${clubName} on GROUNDWORK!
 Use our unique Club Code: ${clubCode}
 Claim your spot and register here: ${inviteUrl}`;

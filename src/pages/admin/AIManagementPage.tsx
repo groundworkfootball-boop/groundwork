@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Sparkles, ShieldAlert, Cpu, Activity, CheckCircle2, DollarSign, Database, RefreshCw } from 'lucide-react';
+import { ShieldAlert } from 'lucide-react';
 
 export const AIManagementPage = () => {
   const [activeProvider, setActiveProvider] = useState<'claude' | 'openrouter'>('claude');

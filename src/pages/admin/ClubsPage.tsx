@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
 import { db } from '../../lib/firebase';
 import { collection, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import type { ClubRecord } from '../../app/types';
-import { Building2, ShieldCheck, ShieldAlert, Check, X, Loader2, RefreshCw } from 'lucide-react';
+import { Building2, ShieldCheck, Check, Loader2, RefreshCw } from 'lucide-react';
 
 export const ClubsPage = () => {
-  const { user } = useAuth();
   const { success, error: toastError } = useToast();
 
   const [clubs, setClubs] = useState<ClubRecord[]>([]);

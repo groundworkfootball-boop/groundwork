@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CreditCard, Check } from 'lucide-react';
+import { CreditCard } from 'lucide-react';
 
 export const SubscriptionsPage = () => {
   const [plans] = useState([

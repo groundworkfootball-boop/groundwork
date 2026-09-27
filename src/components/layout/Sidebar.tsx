@@ -21,7 +21,6 @@ import {
   DollarSign,
   Lock,
   Activity,
-  Heart,
   MessageSquare,
   Building2,
   Zap,

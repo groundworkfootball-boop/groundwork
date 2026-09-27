@@ -181,7 +181,7 @@ export const ClubDashboard = () => {
 
   const isVerifiedAdult = clubData?.verifiedAdult || clubData?.verificationStatus === 'approved';
   const isVerifiedYouth = clubData?.verifiedYouth;
-  const inviteUrl = getClubInviteUrl(clubCode, 'player');
+  const inviteUrl = getClubInviteUrl(clubCode);
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-12">

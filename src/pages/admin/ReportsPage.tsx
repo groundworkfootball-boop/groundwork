@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { FileText, Download, TrendingUp, Users, Target, ShieldCheck } from 'lucide-react';
+import { Download, Users, Target, ShieldCheck } from 'lucide-react';
 import { useToast } from '../../lib/toast';
 
 export const ReportsPage = () => {

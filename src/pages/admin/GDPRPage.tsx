@@ -1,13 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
 import { db } from '../../lib/firebase';
 import { collection, getDocs, doc, updateDoc, serverTimestamp, query, limit } from 'firebase/firestore';
 import type { GDPRRequestRecord } from '../../app/types';
-import { Lock, Download, Trash2, CheckCircle2, ShieldCheck, Loader2, RefreshCw } from 'lucide-react';
+import { ShieldCheck, Loader2, RefreshCw } from 'lucide-react';
 
 export const GDPRPage = () => {
-  const { user } = useAuth();
   const { success, error: toastError } = useToast();
 
   const [requests, setRequests] = useState<GDPRRequestRecord[]>([]);

@@ -136,7 +136,7 @@ export const ClubInvitesPage = () => {
     }
   };
 
-  const inviteUrl = getClubInviteUrl(clubCode, 'player');
+  const inviteUrl = getClubInviteUrl(clubCode);
   const clubName = club?.name || user?.name || 'Our Football Club';
 
   const shareContent = {

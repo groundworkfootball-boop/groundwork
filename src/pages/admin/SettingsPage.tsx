@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Save, ShieldCheck, Loader2 } from 'lucide-react';
+import { Save, Loader2 } from 'lucide-react';
 import { useToast } from '../../lib/toast';
 
 export const SettingsPage = () => {
