@@ -71,27 +71,13 @@ export const GuardianDashboard = () => {
         searchable: d.data().searchable,
       }));
 
-      // If none found in DB yet, provide a helpful demo-linked youth so the guardian can immediately test the consent controls
-      if (loadedYouths.length === 0) {
-        loadedYouths = [
-          {
-            id: 'youth-demo-1',
-            name: 'Alex Johnson (U-16)',
-            dob: '2010-04-12',
-            positions: ['LW', 'RW'],
-            consentStatus: 'pending',
-            searchable: false,
-          },
-        ];
-      }
-
       setYouths(loadedYouths);
 
       // 2. Query consent audit trail for this guardian
       try {
         const auditQ = query(
           collection(db, 'consentAudit'),
-          where('guardianId', '==', user?.uid || user?.email),
+          where('guardianId', 'in', [user?.uid, user?.email].filter(Boolean)),
           limit(10)
         );
         const auditSnap = await getDocs(auditQ);
@@ -102,7 +88,7 @@ export const GuardianDashboard = () => {
           }))
         );
       } catch {
-        // Fallback if index not ready
+        // Index fallback
       }
     } catch (err) {
       console.error('Failed to load guardian data:', err);
@@ -117,14 +103,12 @@ export const GuardianDashboard = () => {
       const isGranting = newStatus === 'granted';
 
       // Update player profile in Firestore
-      if (youth.id !== 'youth-demo-1') {
-        await updateDoc(doc(db, 'players', youth.id), {
-          consentStatus: newStatus,
-          searchable: isGranting,
-          consentGrantedAt: isGranting ? serverTimestamp() : null,
-          updatedAt: serverTimestamp(),
-        });
-      }
+      await updateDoc(doc(db, 'players', youth.id), {
+        consentStatus: newStatus,
+        searchable: isGranting,
+        consentGrantedAt: isGranting ? serverTimestamp() : null,
+        updatedAt: serverTimestamp(),
+      });
 
       // Append immutable audit log
       const auditPayload = {
@@ -266,7 +250,23 @@ export const GuardianDashboard = () => {
           <span>Youth Profiles Under Your Guardianship</span>
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {youths.length === 0 ? (
+          <div className="bg-slate-900/60 border border-white/10 rounded-3xl p-10 text-center">
+            <Lock className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+            <h3 className="text-sm font-bold text-white mb-1">No Youth Profiles Linked Yet</h3>
+            <p className="text-xs text-slate-400 max-w-sm mx-auto mb-4">
+              Youth players registered with your email will appear here automatically for statutory consent management.
+            </p>
+            <Link
+              to="/dashboard/guardian/consent"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand text-slate-950 font-black text-xs uppercase tracking-wider hover:bg-brand-hover transition-all"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>Link Child in Consent Center</span>
+            </Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {youths.map((youth) => {
             const isPending = youth.consentStatus === 'pending';
             const isGranted = youth.consentStatus === 'granted';
@@ -339,6 +339,7 @@ export const GuardianDashboard = () => {
             );
           })}
         </div>
+        )}
       </div>
 
       {/* Immutable Consent Audit Log */}

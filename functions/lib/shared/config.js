@@ -9,7 +9,7 @@ export async function getActiveMatchConfig() {
         return cached.config;
     try {
         const snap = await adminDb.collection('matchingConfigs').doc('default').get();
-        if (snap.exists()) {
+        if (snap.exists) {
             const data = snap.data();
             const config = { ...DEFAULT_MATCH_CONFIG };
             let version = data?.version;

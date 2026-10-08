@@ -13,6 +13,12 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 
+import {
+  saveRememberedAccount,
+  setActiveSession,
+  clearActiveSession,
+} from '../lib/sessionStorage';
+
 export type Role = 'player' | 'guardian' | 'club' | 'admin';
 
 export interface AppUser {
@@ -22,6 +28,7 @@ export interface AppUser {
   name: string;
   emailVerified: boolean;
   claimsRole?: Role | null;
+  photoUrl?: string;
   [key: string]: unknown;
 }
 
@@ -31,7 +38,7 @@ interface AuthContextType {
   user: AppUser | null;
   firebaseUser: FirebaseUser | null;
   loading: boolean;
-  login: (email: string, pass: string) => Promise<void>;
+  login: (email: string, pass: string, remember?: boolean) => Promise<void>;
   loginWithGoogle: (fallbackRole?: Role) => Promise<void>;
   register: (email: string, pass: string, role: Role, name: string, extra?: Record<string, unknown>) => Promise<void>;
   logout: () => Promise<void>;
@@ -60,28 +67,62 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           const claimRole = (tokenResult?.claims?.role as Role | undefined) ?? null;
           const profile = userSnap.exists() ? userSnap.data() : {};
           const userRole: Role = claimRole ?? ((profile.role as Role | undefined) ?? 'player');
+          const userName = (profile.name as string) ?? fbUser.displayName ?? fbUser.email ?? 'User';
 
-          setRole(userRole);
-          setUser({
+          const appUser: AppUser = {
             uid: fbUser.uid,
             email: fbUser.email,
             emailVerified: fbUser.emailVerified,
-            name: (profile.name as string) ?? fbUser.displayName ?? fbUser.email ?? 'User',
+            name: userName,
             role: userRole,
             claimsRole: claimRole,
+            photoUrl: (profile.photoUrl as string) ?? fbUser.photoURL ?? undefined,
             ...profile,
-          });
+          };
+
+          setRole(userRole);
+          setUser(appUser);
           setIsAuthenticated(true);
+
+          // Synchronize session storage & remembered account in device storage
+          saveRememberedAccount({
+            uid: fbUser.uid,
+            email: fbUser.email ?? '',
+            name: userName,
+            role: userRole,
+            avatarUrl: appUser.photoUrl,
+            verified: !!(profile.verifiedAdult || fbUser.emailVerified || (profile.profileCompleteness && Number(profile.profileCompleteness) >= 80)),
+            clubCode: (profile.clubCode as string) ?? undefined,
+          });
+          setActiveSession({
+            uid: fbUser.uid,
+            email: fbUser.email ?? '',
+            name: userName,
+            role: userRole,
+            avatarUrl: appUser.photoUrl,
+            lastLoginAt: Date.now(),
+            verified: !!(profile.verifiedAdult || fbUser.emailVerified || (profile.profileCompleteness && Number(profile.profileCompleteness) >= 80)),
+            clubCode: (profile.clubCode as string) ?? undefined,
+          });
         } catch (err) {
           console.error('Error fetching user profile:', err);
           setIsAuthenticated(true);
-          setUser({
+          const fallbackUser: AppUser = {
             uid: fbUser.uid,
             email: fbUser.email,
             emailVerified: fbUser.emailVerified,
             name: fbUser.email ?? 'User',
             role: 'player',
             claimsRole: null,
+          };
+          setUser(fallbackUser);
+          setRole('player');
+          setActiveSession({
+            uid: fbUser.uid,
+            email: fbUser.email ?? '',
+            name: fbUser.email ?? 'User',
+            role: 'player',
+            lastLoginAt: Date.now(),
           });
         }
       } else {
@@ -89,13 +130,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setRole(null);
         setUser(null);
         setIsAuthenticated(false);
+        clearActiveSession();
       }
       setLoading(false);
     });
     return () => unsubscribe();
   }, []);
 
-  const login = async (email: string, pass: string) => {
+  const login = async (email: string, pass: string, _remember = true) => {
     await signInWithEmailAndPassword(auth, email, pass);
   };
 

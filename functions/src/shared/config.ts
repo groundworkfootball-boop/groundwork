@@ -49,7 +49,7 @@ export function normalizeWeights(config: MatchConfig): number {
 }
 
 /** Validate that weights are sane and sum to 1.0 (±0.0001). */
-export function validateWeightsSum(candidate: Pick<MatchConfig, keyof MatchConfig>): boolean {
+export function validateWeightsSum(candidate: Record<string, number | undefined>): boolean {
   const sum = WEIGHT_KEYS.reduce((total, key) => total + (typeof candidate[key] === 'number' ? (candidate[key] as number) : 0), 0);
   return Math.abs(sum - 1) < 0.0001;
 }

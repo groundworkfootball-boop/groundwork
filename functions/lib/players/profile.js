@@ -38,7 +38,7 @@ export const updatePlayerProfile = onCall(async (request) => {
     const data = parseInput(PLAYER_PROFILE_SCHEMA, request.data);
     const profileRef = adminDb.collection('players').doc(uid);
     const existing = await profileRef.get();
-    if (!existing.exists())
+    if (!existing.exists)
         throw new Error('player profile not found');
     const merged = { ...(existing.data() ?? {}), ...data };
     const completeness = computeProfileCompleteness(merged);
@@ -55,7 +55,7 @@ export const updatePlayerProfile = onCall(async (request) => {
 /** Server-side profile completeness recalculation trigger (defense in depth). */
 export async function recalcCompletenessForPlayer(uid) {
     const snap = await adminDb.collection('players').doc(uid).get();
-    if (!snap.exists())
+    if (!snap.exists)
         return 0;
     const completeness = computeProfileCompleteness(snap.data() ?? {});
     await adminDb.collection('players').doc(uid).update({ profileCompleteness: completeness });

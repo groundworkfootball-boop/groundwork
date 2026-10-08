@@ -3,7 +3,7 @@ import { adminDb } from './firebaseAdmin.js';
 /** Resolve the authoritative role for a uid from the users collection + claims. */
 export async function resolveRole(uid) {
     const snap = await adminDb.collection('users').doc(uid).get();
-    if (!snap.exists())
+    if (!snap.exists)
         return null;
     const role = snap.data()?.role;
     return typeof role === 'string' ? role : null;
@@ -32,7 +32,7 @@ export async function requireAdmin(req, allowedSubRoles = ['isSuperAdmin', 'isMo
         throw new HttpsError('permission-denied', 'Admin access required.');
     }
     if (allowedSubRoles.length) {
-        const token = req.auth?.token ?? {};
+        const token = (req.auth?.token ?? {});
         const hasSubRole = allowedSubRoles.some((key) => token[key] === true);
         if (!hasSubRole) {
             // A plain admin without any sub-role flag is still allowed by default.
@@ -64,7 +64,7 @@ export { HttpsError };
 /** Whether a youth profile may be processed (has explicit guardian consent). */
 export async function hasYouthConsent(youthId) {
     const snap = await adminDb.collection('youthProfiles').doc(youthId).get();
-    if (!snap.exists())
+    if (!snap.exists)
         return false;
     const data = snap.data();
     return data?.consentStatus === 'granted';
@@ -72,14 +72,14 @@ export async function hasYouthConsent(youthId) {
 /** Whether a club is youth-verified and not expired right now. */
 export async function isYouthVerifiedNow(clubId) {
     const snap = await adminDb.collection('clubs').doc(clubId).get();
-    if (!snap.exists())
+    if (!snap.exists)
         return { verified: false, reason: 'club_not_found' };
     const club = snap.data();
-    if (club.verifiedYouth !== true)
+    if (!club || club.verifiedYouth !== true)
         return { verified: false, reason: 'not_youth_verified' };
     const expiresAt = club.youthVerificationExpiresAt;
     if (expiresAt) {
-        const expiryMs = expiresAt instanceof Date ? expiresAt.getTime() : expiresAt.seconds ? expiresAt.seconds * 1000 : Number.NaN;
+        const expiryMs = expiresAt instanceof Date ? expiresAt.getTime() : typeof expiresAt.seconds === 'number' ? expiresAt.seconds * 1000 : Number.NaN;
         if (!Number.isNaN(expiryMs) && expiryMs < Date.now()) {
             return { verified: false, reason: 'verification_expired' };
         }

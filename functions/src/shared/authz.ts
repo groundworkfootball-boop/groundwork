@@ -46,7 +46,7 @@ export async function requireAdmin(
     throw new HttpsError('permission-denied', 'Admin access required.');
   }
   if (allowedSubRoles.length) {
-    const token = req.auth?.token ?? {};
+    const token = (req.auth?.token ?? {}) as Record<string, unknown>;
     const hasSubRole = allowedSubRoles.some((key) => token[key] === true);
     if (!hasSubRole) {
       // A plain admin without any sub-role flag is still allowed by default.
@@ -92,10 +92,10 @@ export async function isYouthVerifiedNow(clubId: string): Promise<{ verified: bo
   const snap = await adminDb.collection('clubs').doc(clubId).get();
   if (!snap.exists) return { verified: false, reason: 'club_not_found' };
   const club = snap.data();
-  if (club.verifiedYouth !== true) return { verified: false, reason: 'not_youth_verified' };
-  const expiresAt = club.youthVerificationExpiresAt;
+  if (!club || club.verifiedYouth !== true) return { verified: false, reason: 'not_youth_verified' };
+  const expiresAt = club.youthVerificationExpiresAt as { seconds?: number } | Date | undefined;
   if (expiresAt) {
-    const expiryMs = expiresAt instanceof Date ? expiresAt.getTime() : expiresAt.seconds ? expiresAt.seconds * 1000 : Number.NaN;
+    const expiryMs = expiresAt instanceof Date ? expiresAt.getTime() : typeof expiresAt.seconds === 'number' ? expiresAt.seconds * 1000 : Number.NaN;
     if (!Number.isNaN(expiryMs) && expiryMs < Date.now()) {
       return { verified: false, reason: 'verification_expired' };
     }

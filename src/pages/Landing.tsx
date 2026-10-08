@@ -1,5 +1,10 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, CheckCircle2 } from 'lucide-react';
+import {
+  ArrowRight,
+  ShieldCheck,
+  Target,
+  Building2,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export const Landing = () => {
@@ -7,20 +12,52 @@ export const Landing = () => {
 
   return (
     <div className="min-h-screen bg-dark-bg text-text-primary flex flex-col font-sans">
-      <header className="px-8 py-6 flex justify-between items-center border-b border-dark-border/50 bg-dark-bg/80 backdrop-blur-md sticky top-0 z-50">
-        <h1 className="text-brand font-black text-2xl tracking-tighter uppercase">Groundwork</h1>
-        <div className="space-x-4">
+      {/* Top Header */}
+      <header className="px-6 lg:px-12 py-5 flex justify-between items-center border-b border-dark-border/60 bg-dark-bg/80 backdrop-blur-md sticky top-0 z-50">
+        <Link to="/" className="flex items-center gap-2.5 group">
+          <div className="w-9 h-9 rounded-2xl bg-brand/10 border border-brand/30 flex items-center justify-center text-brand group-hover:scale-105 transition-transform shadow-[0_0_15px_rgba(204,255,0,0.2)]">
+            <Target className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-brand font-black text-2xl tracking-tighter uppercase leading-none">Groundwork</h1>
+            <span className="text-[9px] text-slate-400 uppercase tracking-[0.2em] font-bold">Football Recruitment OS</span>
+          </div>
+        </Link>
+
+        {/* Desktop Navigation */}
+        <nav className="hidden md:flex items-center space-x-6 text-xs font-bold uppercase tracking-wider text-slate-400">
+          <Link to="/how-it-works" className="hover:text-white transition-colors">How It Works</Link>
+          <Link to="/clubs" className="hover:text-white transition-colors">For Clubs</Link>
+          <Link to="/players" className="hover:text-white transition-colors">For Players</Link>
+          <Link to="/pricing" className="hover:text-white transition-colors">Pricing</Link>
+          <Link to="/safeguarding" className="hover:text-emerald-400 transition-colors flex items-center gap-1.5 text-emerald-400/90">
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>Safeguarding</span>
+          </Link>
+        </nav>
+
+        {/* Auth CTA */}
+        <div className="flex items-center space-x-3">
           {isAuthenticated ? (
-            <Link to="/dashboard" className="px-5 py-2 text-sm font-bold bg-brand text-dark-bg rounded hover:bg-brand-hover transition-colors">
-              DASHBOARD
+            <Link
+              to="/dashboard"
+              className="px-5 py-2.5 text-xs font-black bg-brand text-dark-bg rounded-xl hover:bg-brand-hover transition-transform hover:scale-105 shadow-[0_0_15px_rgba(204,255,0,0.25)] uppercase tracking-wider"
+            >
+              WORKSPACE DASHBOARD
             </Link>
           ) : (
             <>
-              <Link to="/login" className="px-4 py-2 text-sm font-medium hover:text-brand transition-colors border border-transparent">
+              <Link
+                to="/login"
+                className="px-4 py-2 text-xs font-bold text-slate-300 hover:text-white transition-colors uppercase tracking-wider"
+              >
                 LOGIN
               </Link>
-              <Link to="/register" className="px-5 py-2 text-sm font-bold bg-brand text-dark-bg rounded hover:bg-brand-hover transition-colors">
-                JOIN NOW
+              <Link
+                to="/register"
+                className="px-5 py-2.5 text-xs font-black bg-brand text-dark-bg rounded-xl hover:bg-brand-hover transition-transform hover:scale-105 shadow-[0_0_15px_rgba(204,255,0,0.25)] uppercase tracking-wider"
+              >
+                CREATE PROFILE
               </Link>
             </>
           )}
@@ -28,176 +65,262 @@ export const Landing = () => {
       </header>
 
       <main className="flex-1 flex flex-col items-center">
-        <div className="w-full max-w-7xl px-8 py-20 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-          <div className="space-y-8">
+        {/* Hero Section */}
+        <div className="w-full max-w-7xl px-6 lg:px-12 py-16 lg:py-24 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div>
-              <span className="inline-flex items-center space-x-2 px-3 py-1 bg-dark-surface border border-dark-border rounded-full text-xs font-semibold text-brand tracking-wider mb-6">
+              <span className="inline-flex items-center space-x-2 px-3.5 py-1.5 bg-dark-surface border border-brand/30 rounded-full text-xs font-bold text-brand tracking-wider mb-6 shadow-[0_0_15px_rgba(204,255,0,0.1)]">
                 <div className="w-2 h-2 rounded-full bg-brand animate-pulse"></div>
-                <span>RECRUITMENT COMMAND ACTIVE</span>
+                <span className="uppercase">UK Non-League & Academy Opportunity Engine</span>
               </span>
-              <h2 className="text-6xl md:text-8xl font-black tracking-tighter leading-[0.9] uppercase text-text-primary">
+              <h2 className="text-5xl sm:text-7xl lg:text-8xl font-black tracking-tighter leading-[0.9] uppercase text-text-primary">
                 Get Seen.<br />
                 <span className="text-text-secondary">Get Matched.</span><br />
                 <span className="text-brand">Get Signed.</span>
               </h2>
             </div>
-            
-            <p className="text-lg text-text-secondary max-w-md">
-              The UK's data-driven football opportunity engine for non-league, grassroots, and development pathways. Stop hoping to be scouted. Start building your data profile.
+
+            <p className="text-base sm:text-lg text-text-secondary max-w-lg leading-relaxed">
+              The UK's verified data-driven football recruitment network. Connecting grassroots, Sunday league,
+              and academy talent with non-league, semi-pro, and professional clubs through pure deterministic compatibility.
             </p>
 
-            <Link to="/register" className="inline-flex items-center space-x-2 px-8 py-4 bg-brand text-dark-bg font-bold rounded hover:bg-brand-hover transition-transform hover:scale-105 active:scale-95">
-              <span>CREATE YOUR FREE PROFILE</span>
-              <ArrowRight className="w-5 h-5" />
-            </Link>
-
-            <div className="grid grid-cols-2 gap-8 pt-8 border-t border-dark-border/50">
-              <div>
-                <p className="text-2xl font-bold text-brand">5,000+</p>
-                <p className="text-xs text-text-secondary tracking-widest font-bold uppercase mt-1">Players Active</p>
-              </div>
-              <div>
-                <p className="text-2xl font-bold text-brand">300+</p>
-                <p className="text-xs text-text-secondary tracking-widest font-bold uppercase mt-1">Clubs Recruiting</p>
-              </div>
+            <div className="flex flex-col sm:flex-row gap-4 pt-2">
+              <Link
+                to="/register"
+                className="inline-flex items-center justify-center space-x-2 px-8 py-4 bg-brand text-dark-bg font-black rounded-2xl hover:bg-brand-hover transition-transform hover:scale-105 active:scale-95 text-sm uppercase tracking-wider shadow-[0_0_20px_rgba(204,255,0,0.3)]"
+              >
+                <span>CREATE ATHLETIC DOSSIER</span>
+                <ArrowRight className="w-5 h-5" />
+              </Link>
+              <Link
+                to="/how-it-works"
+                className="inline-flex items-center justify-center space-x-2 px-6 py-4 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-bold rounded-2xl transition-all text-sm uppercase tracking-wider"
+              >
+                <span>Explore The Engine</span>
+              </Link>
             </div>
 
-            <div className="bg-dark-surface border border-dark-border p-4 rounded-lg flex items-start space-x-3 mt-4">
-              <CheckCircle2 className="w-5 h-5 text-brand shrink-0" />
+            {/* Platform Metrics */}
+            <div className="grid grid-cols-3 gap-6 pt-8 border-t border-dark-border/50">
               <div>
-                <p className="text-xs text-brand font-bold uppercase tracking-wider mb-1">Recent Match Activity</p>
-                <p className="text-sm text-text-secondary">Striker (82 Profile Score) signed to Step 4 Club in London.</p>
+                <p className="text-3xl font-black text-brand tracking-tight">100%</p>
+                <p className="text-[10px] text-text-secondary tracking-widest font-bold uppercase mt-1">Deterministic Pure Score</p>
+              </div>
+              <div>
+                <p className="text-3xl font-black text-white tracking-tight">Step 1-7</p>
+                <p className="text-[10px] text-text-secondary tracking-widest font-bold uppercase mt-1">Pyramid Pathways</p>
+              </div>
+              <div>
+                <p className="text-3xl font-black text-emerald-400 tracking-tight">FA DBS</p>
+                <p className="text-[10px] text-text-secondary tracking-widest font-bold uppercase mt-1">Child Safeguarding</p>
               </div>
             </div>
           </div>
 
+          {/* Dossier Mockup Card */}
           <div className="relative">
-            <div className="absolute inset-0 bg-gradient-to-r from-dark-bg via-transparent to-transparent z-10 hidden lg:block"></div>
-            
-            {/* Player Intelligence Mockup */}
-            <div className="bg-dark-surface border border-dark-border p-8 rounded-xl shadow-2xl relative z-20 overflow-hidden">
-              <div className="flex justify-between items-start mb-10">
+            <div className="bg-dark-surface border border-dark-border p-8 rounded-3xl shadow-2xl relative z-20 overflow-hidden space-y-8">
+              <div className="flex justify-between items-start">
                 <div>
-                  <h3 className="text-xl font-bold tracking-tight">PLAYER INTELLIGENCE</h3>
-                  <p className="text-sm text-text-secondary">Live Scouting Profile</p>
+                  <span className="text-[10px] font-mono uppercase text-brand font-bold tracking-widest">
+                    Audited Talent Record
+                  </span>
+                  <h3 className="text-2xl font-black tracking-tight text-white uppercase mt-0.5">
+                    Player Intelligence
+                  </h3>
                 </div>
-                <div className="px-2 py-1 bg-dark-bg border border-dark-border rounded text-[10px] text-text-secondary tracking-wider font-mono">
-                  ID: GW-9942
+                <div className="px-3 py-1 bg-dark-bg border border-dark-border rounded-xl text-xs text-brand font-mono font-bold">
+                  VERIFIED PROFILE
                 </div>
               </div>
 
-              <div className="flex justify-center mb-10 relative">
-                <div className="w-48 h-48 rounded-full border-[12px] border-dark-bg flex items-center justify-center relative">
-                   <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 100 100">
-                     <circle cx="50" cy="50" r="44" fill="none" stroke="#2a3441" strokeWidth="12" />
-                     <circle cx="50" cy="50" r="44" fill="none" stroke="#ccff00" strokeWidth="12" strokeDasharray="276" strokeDashoffset="41" className="drop-shadow-[0_0_8px_rgba(204,255,0,0.5)]" />
-                   </svg>
-                   <div className="text-center z-10">
-                     <span className="text-5xl font-black text-brand tracking-tighter">85</span>
-                     <p className="text-[10px] text-text-secondary font-bold tracking-widest uppercase mt-1">Profile Score</p>
-                   </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-6">
-                <div>
-                  <div className="flex justify-between text-xs mb-2 font-bold uppercase tracking-wider text-text-secondary">
-                    <span>Physicality</span>
+              {/* Radial Compatibility Ring */}
+              <div className="flex justify-center relative">
+                <div className="w-48 h-48 rounded-full border-[12px] border-dark-bg flex items-center justify-center relative shadow-inner">
+                  <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 100 100">
+                    <circle cx="50" cy="50" r="42" fill="none" stroke="#1c2638" strokeWidth="10" />
+                    <circle
+                      cx="50"
+                      cy="50"
+                      r="42"
+                      fill="none"
+                      stroke="#ccff00"
+                      strokeWidth="10"
+                      strokeDasharray="264"
+                      strokeDashoffset="38"
+                      className="drop-shadow-[0_0_10px_rgba(204,255,0,0.5)]"
+                    />
+                  </svg>
+                  <div className="text-center z-10">
+                    <span className="text-5xl font-black text-brand tracking-tighter">88%</span>
+                    <p className="text-[10px] text-slate-400 font-black tracking-widest uppercase mt-0.5">
+                      Club Match Fit
+                    </p>
                   </div>
-                  <div className="h-1.5 bg-dark-bg rounded-full overflow-hidden">
+                </div>
+              </div>
+
+              {/* Attributes Progress */}
+              <div className="grid grid-cols-2 gap-4 pt-2">
+                <div className="p-3 bg-dark-bg/80 rounded-2xl border border-dark-border space-y-1.5">
+                  <div className="flex justify-between text-xs font-bold">
+                    <span className="text-white">Positional Fit</span>
+                    <span className="text-brand font-mono">100%</span>
+                  </div>
+                  <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-full bg-brand w-full"></div>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-dark-bg/80 rounded-2xl border border-dark-border space-y-1.5">
+                  <div className="flex justify-between text-xs font-bold">
+                    <span className="text-white">Level / Tier</span>
+                    <span className="text-brand font-mono">92%</span>
+                  </div>
+                  <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-full bg-brand w-[92%]"></div>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-dark-bg/80 rounded-2xl border border-dark-border space-y-1.5">
+                  <div className="flex justify-between text-xs font-bold">
+                    <span className="text-white">Availability</span>
+                    <span className="text-brand font-mono">85%</span>
+                  </div>
+                  <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                     <div className="h-full bg-brand w-[85%]"></div>
                   </div>
                 </div>
-                <div>
-                  <div className="flex justify-between text-xs mb-2 font-bold uppercase tracking-wider text-text-secondary">
-                    <span>Technical</span>
+
+                <div className="p-3 bg-dark-bg/80 rounded-2xl border border-dark-border space-y-1.5">
+                  <div className="flex justify-between text-xs font-bold">
+                    <span className="text-white">Travel Radius</span>
+                    <span className="text-brand font-mono">90%</span>
                   </div>
-                  <div className="h-1.5 bg-dark-bg rounded-full overflow-hidden">
-                    <div className="h-full bg-brand w-[78%]"></div>
+                  <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-full bg-brand w-[90%]"></div>
                   </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-xs mb-2 font-bold uppercase tracking-wider text-text-secondary">
-                    <span>Tactical</span>
-                  </div>
-                  <div className="h-1.5 bg-dark-bg rounded-full overflow-hidden">
-                    <div className="h-full bg-brand w-[82%]"></div>
-                  </div>
-                </div>
-                <div>
-                   <div className="text-xs mb-1 font-bold uppercase tracking-wider text-text-secondary">
-                    Matches Analyzed
-                  </div>
-                  <div className="text-xl font-bold">24</div>
                 </div>
               </div>
             </div>
-            
-            {/* Glow Effect */}
-            <div className="absolute -inset-10 bg-brand/5 blur-[100px] rounded-full z-0 pointer-events-none"></div>
+
+            <div className="absolute -inset-10 bg-brand/5 blur-[120px] rounded-full z-0 pointer-events-none"></div>
           </div>
         </div>
 
-        {/* Pathways Section */}
-        <div className="w-full bg-dark-surface/50 border-t border-dark-border py-24 px-8 mt-12 flex flex-col items-center">
-           <h3 className="text-3xl font-black uppercase tracking-tighter mb-4 text-center">Select Your Pathway</h3>
-           <p className="text-text-secondary text-center max-w-2xl mb-16">
-             Groundwork is tailored to your current stage of development. Choose your track to access specialized recruitment networks.
-           </p>
+        {/* Pathways Overview */}
+        <div className="w-full bg-dark-surface/40 border-t border-dark-border py-20 px-6 lg:px-12 flex flex-col items-center">
+          <div className="text-center max-w-2xl mb-12 space-y-3">
+            <span className="text-xs font-bold uppercase text-brand tracking-widest">Targeted Platforms</span>
+            <h3 className="text-3xl sm:text-4xl font-black uppercase tracking-tight text-white">
+              Recruitment Paths for All Ecosystem Actors
+            </h3>
+            <p className="text-xs sm:text-sm text-text-secondary">
+              Whether you are an adult player, aspiring youth, guardian, or football club staff: Groundwork delivers dedicated tools.
+            </p>
+          </div>
 
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl w-full">
-             {/* Adult Pathway */}
-             <div className="bg-dark-bg border border-dark-border p-8 rounded-xl hover:border-brand/50 transition-colors group">
-               <div className="flex justify-between items-start mb-6">
-                 <div className="w-12 h-12 bg-dark-surface border border-dark-border rounded-lg flex items-center justify-center text-brand">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2v20"/><path d="M2 12h20"/></svg>
-                 </div>
-                 <span className="px-3 py-1 border border-dark-border rounded text-xs font-mono text-text-secondary">AGE 18+</span>
-               </div>
-               <h4 className="text-xl font-bold uppercase tracking-tight mb-2">Adult Pathway</h4>
-               <p className="text-sm text-text-secondary mb-8">
-                 For non-league players, free agents, and semi-professionals looking to climb the pyramid or secure trials at Step 1-6 clubs.
-               </p>
-               <ul className="space-y-3 mb-8">
-                 <li className="flex items-center space-x-3 text-sm"><CheckCircle2 className="w-4 h-4 text-brand" /><span>Direct messaging with First Team Managers</span></li>
-                 <li className="flex items-center space-x-3 text-sm"><CheckCircle2 className="w-4 h-4 text-brand" /><span>Match footage analysis integration</span></li>
-                 <li className="flex items-center space-x-3 text-sm"><CheckCircle2 className="w-4 h-4 text-brand" /><span>Non-league salary & contract matching</span></li>
-               </ul>
-               <Link to="/register" className="block w-full py-3 text-center border border-dark-border rounded hover:bg-dark-surface transition-colors font-semibold text-sm">
-                 ENTER ADULT TRACK
-               </Link>
-             </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-6xl w-full">
+            {/* Adult Players */}
+            <div className="bg-dark-surface border border-dark-border p-8 rounded-3xl space-y-5 hover:border-brand/40 transition-colors">
+              <div className="w-12 h-12 bg-dark-bg border border-dark-border rounded-2xl flex items-center justify-center text-brand">
+                <Target className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-[10px] font-mono uppercase text-slate-400 font-bold">Ages 18+</span>
+                <h4 className="text-lg font-black uppercase text-white mt-1">Adult Players</h4>
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Connect with non-league, semi-pro, and grassroots first teams. Build your data dossier, apply directly for trials, and upload video footage.
+              </p>
+              <Link to="/players" className="inline-flex items-center gap-1.5 text-xs font-bold text-brand hover:underline uppercase tracking-wider">
+                <span>Explore Player Pathway</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
 
-             {/* Youth Pathway */}
-             <div className="bg-dark-bg border border-dark-border p-8 rounded-xl hover:border-brand/50 transition-colors group">
-               <div className="flex justify-between items-start mb-6">
-                 <div className="w-12 h-12 bg-dark-surface border border-dark-border rounded-lg flex items-center justify-center text-brand">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
-                 </div>
-                 <span className="px-3 py-1 border border-dark-border rounded text-xs font-mono text-text-secondary">AGE 15-17</span>
-               </div>
-               <h4 className="text-xl font-bold uppercase tracking-tight mb-2">Youth Pathway</h4>
-               <p className="text-sm text-text-secondary mb-8">
-                 Designed for grassroots and academy release players seeking scholarship opportunities or U18/U23 developmental squads.
-               </p>
-               <ul className="space-y-3 mb-8">
-                 <li className="flex items-center space-x-3 text-sm"><CheckCircle2 className="w-4 h-4 text-brand" /><span>Academy scout visibility network</span></li>
-                 <li className="flex items-center space-x-3 text-sm"><CheckCircle2 className="w-4 h-4 text-brand" /><span>Parent/Guardian account linkage</span></li>
-                 <li className="flex items-center space-x-3 text-sm"><CheckCircle2 className="w-4 h-4 text-brand" /><span>Showcase game invitations</span></li>
-               </ul>
-               <Link to="/register" className="block w-full py-3 text-center border border-dark-border rounded hover:bg-dark-surface transition-colors font-semibold text-sm">
-                 ENTER YOUTH TRACK
-               </Link>
-             </div>
-           </div>
+            {/* Youth & Guardians */}
+            <div className="bg-dark-surface border border-dark-border p-8 rounded-3xl space-y-5 hover:border-emerald-500/40 transition-colors">
+              <div className="w-12 h-12 bg-dark-bg border border-dark-border rounded-2xl flex items-center justify-center text-emerald-400">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-[10px] font-mono uppercase text-emerald-400 font-bold">Under 18 Protection</span>
+                <h4 className="text-lg font-black uppercase text-white mt-1">Youth &amp; Guardians</h4>
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Statutory safeguarding controls. Minors remain hidden until parental consent is verified. Only clubs with certified clearance can scout youth athletes.
+              </p>
+              <Link to="/safeguarding" className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-400 hover:underline uppercase tracking-wider">
+                <span>Safeguarding Protocol</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+
+            {/* Football Clubs */}
+            <div className="bg-dark-surface border border-dark-border p-8 rounded-3xl space-y-5 hover:border-amber-400/40 transition-colors">
+              <div className="w-12 h-12 bg-dark-bg border border-dark-border rounded-2xl flex items-center justify-center text-amber-400">
+                <Building2 className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-[10px] font-mono uppercase text-amber-400 font-bold">Step 1-7 &amp; Academies</span>
+                <h4 className="text-lg font-black uppercase text-white mt-1">Club Recruitment</h4>
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Publish open trials, filter candidates with deterministic scoring, run AI Squad Gap Analysis, and manage shortlists with private staff notes.
+              </p>
+              <Link to="/clubs" className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-400 hover:underline uppercase tracking-wider">
+                <span>Club Command Platform</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
         </div>
       </main>
 
-      <footer className="py-12 border-t border-dark-border flex flex-col items-center">
-        <h2 className="text-brand font-black text-xl tracking-tighter uppercase mb-4">Groundwork</h2>
-        <p className="text-[10px] text-text-secondary font-bold tracking-widest uppercase">
-          © 2024 GROUNDWORK RECRUITMENT COMMAND. ALL RIGHTS RESERVED.
-        </p>
+      {/* Comprehensive Footer */}
+      <footer className="border-t border-dark-border/80 bg-dark-bg/95 py-12 px-6 lg:px-12">
+        <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-8 mb-8 text-xs">
+          <div className="space-y-3 col-span-2 md:col-span-1">
+            <h4 className="text-brand font-black uppercase tracking-tight text-base">Groundwork</h4>
+            <p className="text-slate-400 leading-relaxed text-[11px]">
+              The UK's verified data-driven football recruitment network. Pure deterministic opportunity matching.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <h5 className="font-bold uppercase tracking-wider text-white text-[11px]">Platform</h5>
+            <ul className="space-y-1.5 text-slate-400">
+              <li><Link to="/how-it-works" className="hover:text-white">How It Works</Link></li>
+              <li><Link to="/players" className="hover:text-white">For Players</Link></li>
+              <li><Link to="/clubs" className="hover:text-white">For Clubs</Link></li>
+              <li><Link to="/pricing" className="hover:text-white">Pricing &amp; Boosts</Link></li>
+            </ul>
+          </div>
+
+          <div className="space-y-2">
+            <h5 className="font-bold uppercase tracking-wider text-white text-[11px]">Safeguarding &amp; Trust</h5>
+            <ul className="space-y-1.5 text-slate-400">
+              <li><Link to="/safeguarding" className="hover:text-white">Child Protection Charter</Link></li>
+              <li><Link to="/privacy" className="hover:text-white">Privacy &amp; GDPR</Link></li>
+              <li><Link to="/terms" className="hover:text-white">Terms of Service</Link></li>
+            </ul>
+          </div>
+
+          <div className="space-y-2">
+            <h5 className="font-bold uppercase tracking-wider text-white text-[11px]">Company</h5>
+            <ul className="space-y-1.5 text-slate-400">
+              <li><Link to="/about" className="hover:text-white">About Groundwork</Link></li>
+              <li><Link to="/contact" className="hover:text-white">Contact Support</Link></li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="max-w-7xl mx-auto pt-6 border-t border-dark-border flex flex-col sm:flex-row items-center justify-between text-[11px] text-slate-500 gap-2">
+          <p>© 2026 Groundwork Football Technologies Ltd. All Rights Reserved.</p>
+          <p className="font-mono">Groundwork OS v2.4 • FA DBS Verified</p>
+        </div>
       </footer>
     </div>
   );

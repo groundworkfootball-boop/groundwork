@@ -30,9 +30,14 @@ export const updateMatchingConfig = onCall(async (request) => {
         return { error: 'invalid weights', issues: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`) };
     }
     const weights = parsed.data;
-    const inputs = {};
-    for (const key of WEIGHT_KEYS_SET)
-        inputs[key] = normalizeWeight(weights[key]);
+    const inputs = {
+        positionWeight: normalizeWeight(weights.positionWeight),
+        distanceWeight: normalizeWeight(weights.distanceWeight),
+        levelWeight: normalizeWeight(weights.levelWeight),
+        attributesWeight: normalizeWeight(weights.attributesWeight),
+        availabilityWeight: normalizeWeight(weights.availabilityWeight),
+        boostWeight: normalizeWeight(weights.boostWeight),
+    };
     if (!validateWeightsSum(inputs)) {
         return { error: 'weights must sum to 1.0 (100%)', data: inputs };
     }
@@ -65,7 +70,7 @@ export const getMatchingConfigState = onCall(async (request) => {
     const configSnap = await adminDb.collection('matchingConfigs').doc('default').get();
     const versions = await adminDb.collection('matchingConfigVersions').orderBy('createdAt', 'desc').limit(20).get();
     return {
-        active: configSnap.exists() ? configSnap.data() : null,
+        active: configSnap.exists ? configSnap.data() : null,
         versions: versions.docs.map((d) => ({ id: d.id, ...d.data() })),
     };
 });

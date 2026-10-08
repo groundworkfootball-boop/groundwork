@@ -7,7 +7,7 @@ import {
   Target,
   Video,
   Loader2,
-  Sparkles,
+  Lightbulb,
   Zap,
   Building2,
   CheckCircle2,
@@ -300,7 +300,7 @@ export const PlayerDashboard = () => {
 
       {/* Boost Banner if inactive */}
       {!playerData?.boostsActive && (
-        <div className="bg-gradient-to-r from-brand/20 via-slate-900 to-slate-900 border border-brand/30 rounded-3xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="bg-gradient-to-r from-brand/20 via-dark-bg to-dark-bg border border-brand/30 rounded-xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 rounded-2xl bg-brand/20 border border-brand/40 text-brand flex items-center justify-center shrink-0">
               <Zap className="w-6 h-6" />
@@ -324,7 +324,7 @@ export const PlayerDashboard = () => {
       {/* Top Grid: Profile Completeness & Recruitment KPIs */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Profile Completeness Meter */}
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-6 relative overflow-hidden backdrop-blur-xl">
+        <div className="bg-dark-surface border border-dark-border rounded-xl p-6 relative overflow-hidden">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-bold text-white flex items-center gap-2">
               <Star className="w-4 h-4 text-brand" />
@@ -372,7 +372,7 @@ export const PlayerDashboard = () => {
 
         {/* Recruitment Summary KPIs */}
         <div className="lg:col-span-2 grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5 flex flex-col justify-between">
+          <div className="bg-dark-surface border border-dark-border rounded-xl p-5 flex flex-col justify-between">
             <div className="flex items-center justify-between text-slate-400 mb-2">
               <span className="text-xs uppercase font-bold tracking-wider">Matches</span>
               <Target className="w-4 h-4 text-brand" />
@@ -383,7 +383,7 @@ export const PlayerDashboard = () => {
             </div>
           </div>
 
-          <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5 flex flex-col justify-between">
+          <div className="bg-dark-surface border border-dark-border rounded-xl p-5 flex flex-col justify-between">
             <div className="flex items-center justify-between text-slate-400 mb-2">
               <span className="text-xs uppercase font-bold tracking-wider">Applied</span>
               <FileText className="w-4 h-4 text-blue-400" />
@@ -394,7 +394,7 @@ export const PlayerDashboard = () => {
             </div>
           </div>
 
-          <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5 flex flex-col justify-between">
+          <div className="bg-dark-surface border border-dark-border rounded-xl p-5 flex flex-col justify-between">
             <div className="flex items-center justify-between text-slate-400 mb-2">
               <span className="text-xs uppercase font-bold tracking-wider">Clips</span>
               <Video className="w-4 h-4 text-purple-400" />
@@ -405,7 +405,7 @@ export const PlayerDashboard = () => {
             </div>
           </div>
 
-          <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5 flex flex-col justify-between">
+          <div className="bg-dark-surface border border-dark-border rounded-xl p-5 flex flex-col justify-between">
             <div className="flex items-center justify-between text-slate-400 mb-2">
               <span className="text-xs uppercase font-bold tracking-wider">Alerts</span>
               <Bell className="w-4 h-4 text-amber-400" />
@@ -420,15 +420,15 @@ export const PlayerDashboard = () => {
 
       {/* AI Improvement Recommendations */}
       {recommendations.length > 0 && (
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-6">
+        <div className="bg-dark-surface border border-dark-border rounded-xl p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-brand" />
+              <Lightbulb className="w-4 h-4 text-brand" />
               <h2 className="text-sm font-bold text-white uppercase tracking-wider">
                 AI-Assisted Improvement Recommendations
               </h2>
             </div>
-            <span className="text-[11px] text-slate-400 font-mono bg-white/5 px-2.5 py-0.5 rounded-full">
+            <span className="text-[11px] text-slate-400 font-mono bg-dark-bg px-2.5 py-0.5 rounded-full border border-dark-border">
               STRUCTURED ADVISORY
             </span>
           </div>
@@ -437,7 +437,7 @@ export const PlayerDashboard = () => {
             {recommendations.map((rec) => (
               <div
                 key={rec.id}
-                className="p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-brand/25 transition-all relative group"
+                className="p-4 rounded-xl bg-dark-bg border border-dark-border hover:border-brand/25 transition-all relative group"
               >
                 <button
                   onClick={() => handleDismissRec(rec.id)}
@@ -464,7 +464,7 @@ export const PlayerDashboard = () => {
       {/* Deterministic Opportunity Feed & Applications Tracker */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left 2 Cols: Compatible Club Opportunities */}
-        <div className="lg:col-span-2 bg-slate-900/80 border border-white/10 rounded-3xl p-6">
+        <div className="lg:col-span-2 bg-dark-surface border border-dark-border rounded-xl p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
               <div className="flex items-center gap-2">
@@ -496,7 +496,7 @@ export const PlayerDashboard = () => {
               {opportunities.map((opp) => (
                 <div
                   key={opp.id}
-                  className="p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-brand/25 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                  className="p-4 rounded-xl bg-dark-bg border border-dark-border hover:border-brand/25 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4"
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
@@ -542,7 +542,7 @@ export const PlayerDashboard = () => {
         </div>
 
         {/* Right Col: Applications Status Tracker */}
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-6 flex flex-col justify-between">
+        <div className="bg-dark-surface border border-dark-border rounded-xl p-6 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
@@ -565,7 +565,7 @@ export const PlayerDashboard = () => {
             ) : (
               <div className="space-y-3">
                 {applications.map((app) => (
-                  <div key={app.id} className="p-3.5 rounded-2xl bg-white/5 border border-white/5 space-y-2">
+                  <div key={app.id} className="p-3.5 rounded-xl bg-dark-bg border border-dark-border space-y-2">
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-bold text-white truncate max-w-[150px]">
                         {app.opportunityTitle || app.clubName || 'Trial Application'}

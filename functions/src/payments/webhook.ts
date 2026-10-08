@@ -41,7 +41,7 @@ interface SubscriptionMeta {
   clubId?: string;
 }
 
-function metadataOf(obj: { metadata?: Stripe.Metadata } | null | undefined): SubscriptionMeta {
+function metadataOf(obj: { metadata?: Stripe.Metadata | null } | null | undefined): SubscriptionMeta {
   const md = obj?.metadata ?? {};
   return { userId: md.userId || undefined, clubId: md.clubId || undefined };
 }

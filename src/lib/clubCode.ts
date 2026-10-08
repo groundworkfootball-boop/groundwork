@@ -23,17 +23,17 @@ export function generateClubCode(clubName?: string): string {
   return `GW-${prefix}-${randomPart}`;
 }
 
-// Validate club code format
+// Validate club code format (strictly GW-XXX-XXXX where prefix is 3 chars, random part is 4 chars)
 export function isValidClubCode(code: string): boolean {
   if (!code) return false;
   const trimmed = code.trim().toUpperCase();
-  return /^GW-[A-Z0-9]{2,5}-[A-Z0-9]{3,6}$/.test(trimmed);
+  return /^GW-[A-Z0-9]{3}-[A-Z0-9]{4}$/.test(trimmed);
 }
 
 // Build the public registration / claim URL
-export function getClubInviteUrl(clubCode: string): string {
+export function getClubInviteUrl(clubCode: string, role = 'player'): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://groundwork.football';
-  return `${origin}/register?clubCode=${encodeURIComponent(clubCode)}`;
+  return `${origin}/register?clubCode=${encodeURIComponent(clubCode)}&role=${encodeURIComponent(role)}`;
 }
 
 export interface ShareContent {

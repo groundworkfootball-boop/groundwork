@@ -1,19 +1,66 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useToast } from '../../lib/toast';
+import { useAuth } from '../../context/AuthContext';
+import { db } from '../../lib/firebase';
+import { collection, addDoc, getDocs, query, where, serverTimestamp } from 'firebase/firestore';
 import { Zap, ShieldCheck, Loader2 } from 'lucide-react';
 
 export const BoostsPage = () => {
-  const { success } = useToast();
-  const [activeBoost, setActiveBoost] = useState<string | null>('7-day');
+  const { user } = useAuth();
+  const { success, error: toastError } = useToast();
+  const [activeBoost, setActiveBoost] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
 
-  const handlePurchaseBoost = (pkg: string) => {
+  useEffect(() => {
+    if (!user?.uid) return;
+    const loadBoosts = async () => {
+      try {
+        const q = query(
+          collection(db, 'boosts'),
+          where('clubId', '==', user.uid),
+          where('status', '==', 'active')
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          setActiveBoost(snap.docs[0].data().packageId || '14-day');
+        }
+      } catch (err) {
+        console.warn('Load boosts:', err);
+      }
+    };
+    loadBoosts();
+  }, [user?.uid]);
+
+  const handlePurchaseBoost = async (pkg: string) => {
+    if (!user?.uid) return;
     setProcessing(true);
-    setTimeout(() => {
+    try {
+      const prices: Record<string, number> = { '7-day': 1900, '14-day': 3500, '30-day': 6500 };
+      await addDoc(collection(db, 'boosts'), {
+        clubId: user.uid,
+        packageId: pkg,
+        status: 'active',
+        boostStartedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      });
+
+      await addDoc(collection(db, 'payments'), {
+        clubId: user.uid,
+        amount: prices[pkg] || 1900,
+        currency: 'gbp',
+        status: 'succeeded',
+        type: 'boost',
+        product: `${pkg} Visibility Boost`,
+        createdAt: serverTimestamp(),
+      });
+
       setActiveBoost(pkg);
-      setProcessing(false);
       success(`Opportunity listing boosted for ${pkg}!`);
-    }, 600);
+    } catch (err) {
+      toastError('Failed to process boost.');
+    } finally {
+      setProcessing(false);
+    }
   };
 
   return (

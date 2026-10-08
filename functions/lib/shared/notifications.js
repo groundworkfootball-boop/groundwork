@@ -32,7 +32,7 @@ export async function createNotification(input) {
     });
     if (input.email === true) {
         const userSnap = await adminDb.collection('users').doc(input.userId).get();
-        const email = userSnap.exists() ? userSnap.data()?.email : undefined;
+        const email = userSnap.exists ? userSnap.data()?.email : undefined;
         if (email) {
             try {
                 await sendEmail({ to: email, subject: input.title, html: simpleHtml(input.title, input.body) });

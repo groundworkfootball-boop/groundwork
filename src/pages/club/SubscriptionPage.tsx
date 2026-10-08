@@ -1,19 +1,64 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useToast } from '../../lib/toast';
+import { useAuth } from '../../context/AuthContext';
+import { db } from '../../lib/firebase';
+import { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { Check, Loader2 } from 'lucide-react';
 
 export const SubscriptionPage = () => {
-  const { success } = useToast();
+  const { user } = useAuth();
+  const { success, error: toastError } = useToast();
   const [currentTier, setCurrentTier] = useState<'free' | 'standard' | 'premium'>('standard');
   const [billing, setBilling] = useState(false);
 
-  const handleSelectPlan = (tier: 'free' | 'standard' | 'premium') => {
+  useEffect(() => {
+    if (!user?.uid) return;
+    const loadClubPlan = async () => {
+      try {
+        const snap = await getDoc(doc(db, 'clubs', user.uid));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.subscriptionTier) {
+            setCurrentTier(data.subscriptionTier);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load club subscription:', err);
+      }
+    };
+    loadClubPlan();
+  }, [user?.uid]);
+
+  const handleSelectPlan = async (tier: 'free' | 'standard' | 'premium') => {
+    if (!user?.uid) return;
     setBilling(true);
-    setTimeout(() => {
+    try {
+      await updateDoc(doc(db, 'clubs', user.uid), {
+        subscriptionTier: tier,
+        subscriptionStatus: 'active',
+        updatedAt: serverTimestamp(),
+      });
+
+      if (tier !== 'free') {
+        const prices = { standard: 4900, premium: 14900 };
+        await addDoc(collection(db, 'payments'), {
+          clubId: user.uid,
+          amount: prices[tier],
+          currency: 'gbp',
+          status: 'succeeded',
+          type: 'subscription',
+          plan: tier,
+          createdAt: serverTimestamp(),
+        });
+      }
+
       setCurrentTier(tier);
-      setBilling(false);
       success(`Updated club recruitment subscription to ${tier.toUpperCase()} tier!`);
-    }, 600);
+    } catch (err) {
+      toastError('Failed to process club subscription update.');
+    } finally {
+      setBilling(false);
+    }
   };
 
   const plans = [

@@ -36,7 +36,7 @@ export const sendConsentInvite = onCall(async (request) => {
         throw new HttpsError('invalid-argument', 'Please provide a valid youth profile and guardian contact.');
     const { youthId, guardianName, guardianEmail, relationship } = parsed.data;
     const youthSnap = await adminDb.collection('youthProfiles').doc(youthId).get();
-    if (!youthSnap.exists())
+    if (!youthSnap.exists)
         throw new HttpsError('not-found', 'Youth profile not found.');
     const youth = youthSnap.data() ?? {};
     if (youth.consentStatus === 'granted')
@@ -96,139 +96,147 @@ export const sendConsentInvite = onCall(async (request) => {
         metadata: { guardianEmailHashed: hash(email) },
     });
     return { ok: true, alreadyGranted: false };
-    /**
-     * Guardian grants consent using the emailed token. Public portal — the caller
-     * does NOT need to be signed in; the token itself is the authorization credential.
-     */
-    export const grantConsent = onCall(async (request) => {
-        const parsed = tokenSchema.safeParse(request.data ?? {});
-        if (!parsed.success)
-            throw new HttpsError('invalid-argument', 'Invalid consent link.');
-        const tokenSnap = await adminDb.collection('consentTokens').doc(parsed.data.token).get();
-        if (!tokenSnap.exists())
-            throw new HttpsError('not-found', 'This consent link is not valid.');
-        const tokenRec = tokenSnap.data() ?? {};
-        if (tokenRec.status !== 'pending')
-            throw new HttpsError('already-exists', 'This consent link has already been used.');
-        const expiresAt = tokenRec.expiresAt;
-        const expiryMs = expiresAt instanceof Date ? expiresAt.getTime() : expiresAt?.seconds ? expiresAt.seconds * 1000 : Number.NaN;
-        if (!Number.isNaN(expiryMs) && expiryMs < Date.now()) {
-            throw new HttpsError('deadline-exceeded', 'This consent link has expired. Request a new one.');
-        }
-        const youthId = String(tokenRec.youthId ?? '');
-        await adminDb.runTransaction(async (tx) => {
-            const youthRef = tx.collection('youthProfiles').doc(youthId);
-            const youthSnap = await tx.get(youthRef);
-            if (!youthSnap.exists)
-                throw new HttpsError('not-found', 'Youth profile not found.');
-            const youth = youthSnap.data() ?? {};
-            if (youth.consentStatus === 'granted')
-                throw new HttpsError('already-exists', 'Consent is already granted.');
-            tx.update(youthRef, {
-                consentStatus: 'granted',
-                consentGrantedAt: FieldValue.serverTimestamp(),
-                consentGrantedByGuardianEmail: tokenRec.guardianEmail,
-                privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
-                updatedAt: FieldValue.serverTimestamp(),
-            });
-            tx.update(tx.collection('players').doc(youthId), {
-                searchable: true,
-                consentStatus: 'granted',
-                updatedAtMs: Date.now(),
-            });
-            tx.update(tx.collection('consentTokens').doc(parsed.data.token), { status: 'used', usedAt: FieldValue.serverTimestamp() });
-        });
-        const guardianId = request.auth?.uid;
-        await writeConsentAudit({
-            youthId,
-            guardianId: guardianId ?? '',
-            action: 'granted',
-            hashedIp: request.rawRequest?.ip ? hash(request.rawRequest.ip) : '',
-            privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
-            source: 'consent_token',
-        });
-        const { enqueueMatchJob } = await import('../matching/queue.js');
-        await enqueueMatchJob('player', youthId);
-        if (guardianId) {
-            await createNotification({
-                userId: guardianId,
-                type: 'guardian_consent',
-                title: 'Consent granted',
-                body: 'Your consent for the youth profile is now active. The profile can now appear in searches for verified youth clubs.',
-            });
-        }
-        return { ok: true, youthId };
-    });
-    /**
-     * Guardian or safeguarding admin withdraws consent.
-     * Delist immediately server-side: searchable=false, match results removed.
-     */
-    export const withdrawConsent = onCall(async (request) => {
-        const parsed = z.object({ youthId: z.string().min(4).max(128) }).safeParse(request.data ?? {});
-        if (!parsed.success)
-            throw new HttpsError('invalid-argument', 'Invalid youth profile id.');
-        const uid = request.auth?.uid;
-        if (!uid)
-            throw new HttpsError('unauthenticated', 'Please sign in to withdraw consent.');
-        const youthSnap = await adminDb.collection('youthProfiles').doc(parsed.data.youthId).get();
-        if (!youthSnap.exists())
+});
+/**
+ * Guardian grants consent using the emailed token. Public portal — the caller
+ * does NOT need to be signed in; the token itself is the authorization credential.
+ */
+async function executeGrantConsent(token, guardianId, clientIp) {
+    const tokenSnap = await adminDb.collection('consentTokens').doc(token).get();
+    if (!tokenSnap.exists)
+        throw new HttpsError('not-found', 'This consent link is not valid.');
+    const tokenRec = tokenSnap.data() ?? {};
+    if (tokenRec.status !== 'pending')
+        throw new HttpsError('already-exists', 'This consent link has already been used.');
+    const expiresAt = tokenRec.expiresAt;
+    const expiryMs = expiresAt instanceof Date ? expiresAt.getTime() : expiresAt?.seconds ? expiresAt.seconds * 1000 : Number.NaN;
+    if (!Number.isNaN(expiryMs) && expiryMs < Date.now()) {
+        throw new HttpsError('deadline-exceeded', 'This consent link has expired. Request a new one.');
+    }
+    const youthId = String(tokenRec.youthId ?? '');
+    const youthRef = adminDb.collection('youthProfiles').doc(youthId);
+    const playerRef = adminDb.collection('players').doc(youthId);
+    const tokenDocRef = adminDb.collection('consentTokens').doc(token);
+    await adminDb.runTransaction(async (tx) => {
+        const youthSnap = await tx.get(youthRef);
+        if (!youthSnap.exists)
             throw new HttpsError('not-found', 'Youth profile not found.');
         const youth = youthSnap.data() ?? {};
-        const isGuardian = request.auth?.token.role === 'guardian';
-        const isAdmin = request.auth?.token.role === 'admin' || request.auth?.token.isSafeguardingAdmin === true;
-        const isLinkedGuardian = isGuardian && youth.guardianEmail === request.auth?.token.email;
-        if (!isLinkedGuardian && !isAdmin) {
-            throw new HttpsError('permission-denied', 'Only the linked guardian or a safeguarding admin can withdraw consent.');
-        }
-        await adminDb.runTransaction(async (tx) => {
-            tx.update(tx.collection('youthProfiles').doc(parsed.data.youthId), {
-                consentStatus: 'withdrawn',
-                withdrawnAt: FieldValue.serverTimestamp(),
-                updatedAt: FieldValue.serverTimestamp(),
-            });
-            tx.update(tx.collection('players').doc(parsed.data.youthId), {
-                searchable: false,
-                consentStatus: 'withdrawn',
-                updatedAtMs: Date.now(),
-            });
+        if (youth.consentStatus === 'granted')
+            throw new HttpsError('already-exists', 'Consent is already granted.');
+        tx.update(youthRef, {
+            consentStatus: 'granted',
+            consentGrantedAt: FieldValue.serverTimestamp(),
+            consentGrantedByGuardianEmail: tokenRec.guardianEmail,
+            privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
+            updatedAt: FieldValue.serverTimestamp(),
         });
-        await removePlayerMatchResults(parsed.data.youthId);
-        await queueYouthMediaDeletion(parsed.data.youthId);
+        tx.update(playerRef, {
+            searchable: true,
+            consentStatus: 'granted',
+            updatedAtMs: Date.now(),
+        });
+        tx.update(tokenDocRef, { status: 'used', usedAt: FieldValue.serverTimestamp() });
+    });
+    await writeConsentAudit({
+        youthId,
+        guardianId: guardianId ?? '',
+        action: 'granted',
+        hashedIp: clientIp ? hash(clientIp) : '',
+        privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
+        source: 'consent_token',
+    });
+    const { enqueueMatchJob } = await import('../matching/queue.js');
+    await enqueueMatchJob('player', youthId);
+    if (guardianId) {
+        await createNotification({
+            userId: guardianId,
+            type: 'guardian_consent',
+            title: 'Consent granted',
+            body: 'Your consent for the youth profile is now active. The profile can now appear in searches for verified youth clubs.',
+        });
+    }
+    return { ok: true, youthId };
+}
+/**
+ * Guardian grants consent using the emailed token. Public portal — the caller
+ * does NOT need to be signed in; the token itself is the authorization credential.
+ */
+export const grantConsent = onCall(async (request) => {
+    const parsed = tokenSchema.safeParse(request.data ?? {});
+    if (!parsed.success)
+        throw new HttpsError('invalid-argument', 'Invalid consent link.');
+    return executeGrantConsent(parsed.data.token, request.auth?.uid, request.rawRequest?.ip);
+});
+/**
+ * Guardian or safeguarding admin withdraws consent.
+ * Delist immediately server-side: searchable=false, match results removed.
+ */
+export const withdrawConsent = onCall(async (request) => {
+    const parsed = z.object({ youthId: z.string().min(4).max(128) }).safeParse(request.data ?? {});
+    if (!parsed.success)
+        throw new HttpsError('invalid-argument', 'Invalid youth profile id.');
+    const uid = request.auth?.uid;
+    if (!uid)
+        throw new HttpsError('unauthenticated', 'Please sign in to withdraw consent.');
+    const youthSnap = await adminDb.collection('youthProfiles').doc(parsed.data.youthId).get();
+    if (!youthSnap.exists)
+        throw new HttpsError('not-found', 'Youth profile not found.');
+    const youth = youthSnap.data() ?? {};
+    const isGuardian = request.auth?.token.role === 'guardian';
+    const isAdmin = request.auth?.token.role === 'admin' || request.auth?.token.isSafeguardingAdmin === true;
+    const isLinkedGuardian = isGuardian && youth.guardianEmail === request.auth?.token.email;
+    if (!isLinkedGuardian && !isAdmin) {
+        throw new HttpsError('permission-denied', 'Only the linked guardian or a safeguarding admin can withdraw consent.');
+    }
+    const youthRef = adminDb.collection('youthProfiles').doc(parsed.data.youthId);
+    const playerRef = adminDb.collection('players').doc(parsed.data.youthId);
+    await adminDb.runTransaction(async (tx) => {
+        tx.update(youthRef, {
+            consentStatus: 'withdrawn',
+            withdrawnAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+        });
+        tx.update(playerRef, {
+            searchable: false,
+            consentStatus: 'withdrawn',
+            updatedAtMs: Date.now(),
+        });
+    });
+    await removePlayerMatchResults(parsed.data.youthId);
+    await queueYouthMediaDeletion(parsed.data.youthId);
+    await writeConsentAudit({
+        youthId: parsed.data.youthId,
+        guardianId: uid,
+        action: 'withdrawn',
+        hashedIp: request.rawRequest?.ip ? hash(request.rawRequest.ip) : '',
+        privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
+        source: 'guardian_portal',
+    });
+    await createNotification({
+        userId: uid,
+        type: 'guardian_consent',
+        title: 'Consent withdrawn',
+        body: 'The youth profile is now hidden from all club searches and its media has been queued for deletion.',
+    });
+    return { ok: true };
+});
+export const reGrantConsent = onCall(async (request) => {
+    const parsed = tokenSchema.safeParse(request.data ?? {});
+    if (!parsed.success)
+        throw new HttpsError('invalid-argument', 'Invalid consent link.');
+    const res = await executeGrantConsent(parsed.data.token, request.auth?.uid, request.rawRequest?.ip);
+    if (res.youthId) {
         await writeConsentAudit({
-            youthId: parsed.data.youthId,
-            guardianId: uid,
-            action: 'withdrawn',
+            youthId: res.youthId,
+            guardianId: request.auth?.uid ?? '',
+            action: 're-granted',
             hashedIp: request.rawRequest?.ip ? hash(request.rawRequest.ip) : '',
             privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
             source: 'guardian_portal',
         });
-        await createNotification({
-            userId: uid,
-            type: 'guardian_consent',
-            title: 'Consent withdrawn',
-            body: 'The youth profile is now hidden from all club searches and its media has been queued for deletion.',
-        });
-        return { ok: true };
-    });
-    export const reGrantConsent = onCall(async (request) => {
-        const parsed = tokenSchema.safeParse(request.data ?? {});
-        if (!parsed.success)
-            throw new HttpsError('invalid-argument', 'Invalid consent link.');
-        await grantConsent(request);
-        const tokenSnap = await adminDb.collection('consentTokens').doc(parsed.data.token).get();
-        const youthId = String(tokenSnap.exists() ? (tokenSnap.data()?.youthId ?? '') : '');
-        if (youthId) {
-            await writeConsentAudit({
-                youthId,
-                guardianId: request.auth?.uid ?? '',
-                action: 're-granted',
-                hashedIp: request.rawRequest?.ip ? hash(request.rawRequest.ip) : '',
-                privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
-                source: 'guardian_portal',
-            });
-        }
-        return { ok: true };
-    });
+    }
+    return { ok: true };
 });
 /** Queue all videos belonging to a youth for deletion (consent withdrawal). */
 export async function queueYouthMediaDeletion(youthId) {

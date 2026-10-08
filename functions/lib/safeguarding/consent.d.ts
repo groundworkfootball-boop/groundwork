@@ -7,6 +7,24 @@ export declare const sendConsentInvite: import("firebase-functions/v2/https").Ca
     ok: boolean;
     alreadyGranted: boolean;
 }>, unknown>;
+/**
+ * Guardian grants consent using the emailed token. Public portal — the caller
+ * does NOT need to be signed in; the token itself is the authorization credential.
+ */
+export declare const grantConsent: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    ok: boolean;
+    youthId: string;
+}>, unknown>;
+/**
+ * Guardian or safeguarding admin withdraws consent.
+ * Delist immediately server-side: searchable=false, match results removed.
+ */
+export declare const withdrawConsent: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    ok: boolean;
+}>, unknown>;
+export declare const reGrantConsent: import("firebase-functions/v2/https").CallableFunction<any, Promise<{
+    ok: boolean;
+}>, unknown>;
 /** Queue all videos belonging to a youth for deletion (consent withdrawal). */
 export declare function queueYouthMediaDeletion(youthId: string): Promise<void>;
 /**

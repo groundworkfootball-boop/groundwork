@@ -1,19 +1,65 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useToast } from '../../lib/toast';
+import { useAuth } from '../../context/AuthContext';
+import { db } from '../../lib/firebase';
+import { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { Zap, Check, Loader2 } from 'lucide-react';
 
 export const SubscriptionPage = () => {
-  const { success } = useToast();
+  const { user } = useAuth();
+  const { success, error: toastError } = useToast();
   const [activePlan, setActivePlan] = useState<'free' | 'pro'>('free');
   const [loading, setLoading] = useState(false);
 
-  const handleUpgrade = (plan: 'free' | 'pro') => {
+  useEffect(() => {
+    if (!user?.uid) return;
+    const loadPlan = async () => {
+      try {
+        const snap = await getDoc(doc(db, 'players', user.uid));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.boostsActive || data.plan === 'pro') {
+            setActivePlan('pro');
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to load player subscription state:', err);
+      }
+    };
+    loadPlan();
+  }, [user?.uid]);
+
+  const handleUpgrade = async (plan: 'free' | 'pro') => {
+    if (!user?.uid) return;
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const isPro = plan === 'pro';
+      await updateDoc(doc(db, 'players', user.uid), {
+        plan,
+        boostsActive: isPro,
+        subscriptionStatus: isPro ? 'active' : 'inactive',
+        updatedAt: serverTimestamp(),
+      });
+
+      if (isPro) {
+        await addDoc(collection(db, 'payments'), {
+          playerId: user.uid,
+          amount: 999,
+          currency: 'gbp',
+          status: 'succeeded',
+          type: 'subscription',
+          product: 'Player PRO Boost',
+          createdAt: serverTimestamp(),
+        });
+      }
+
       setActivePlan(plan);
+      success(plan === 'pro' ? 'Player Pro activated! Scouting boost applied.' : 'Reverted to free plan.');
+    } catch (err) {
+      toastError('Failed to process subscription update.');
+    } finally {
       setLoading(false);
-      success(plan === 'pro' ? 'Player Pro activated! Enjoy boosted scouting visibility.' : 'Switched to standard free plan.');
-    }, 600);
+    }
   };
 
   return (

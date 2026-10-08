@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Search, MapPin, Star, Send, Loader2, AlertCircle, User, X, CheckCircle2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Search, MapPin, Star, Send, Loader2, AlertCircle, User, X, CheckCircle2, Eye } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
 import { db } from '../../lib/firebase';
@@ -47,20 +48,38 @@ export const SearchPlayersPage = () => {
       setLoading(true);
       setFetchError(null);
       try {
-        // Fetch club name
+        // Fetch club details & verification status
+        let isYouthVerified = false;
         const clubSnap = await getDoc(doc(db, 'clubs', user.uid));
         if (clubSnap.exists()) {
-          setClubName(clubSnap.data().name || user.name || 'Club');
+          const cData = clubSnap.data();
+          setClubName(cData.name || user.name || 'Club');
+          isYouthVerified = cData.verifiedYouth === true;
         }
 
         // Fetch searchable adult players
-        const playersQuery = query(
+        const adultQuery = query(
           collection(db, 'players'),
           where('searchable', '==', true),
           where('isYouth', '==', false)
         );
-        const pSnap = await getDocs(playersQuery);
-        setPlayers(pSnap.docs.map(d => ({ id: d.id, ...d.data() } as PlayerDoc)));
+        const pSnap = await getDocs(adultQuery);
+        let allPlayers = pSnap.docs.map(d => ({ id: d.id, ...d.data() } as PlayerDoc));
+
+        // If club is youth verified, securely include consented youth players
+        if (isYouthVerified) {
+          const youthQuery = query(
+            collection(db, 'players'),
+            where('searchable', '==', true),
+            where('isYouth', '==', true),
+            where('consentStatus', '==', 'granted')
+          );
+          const ySnap = await getDocs(youthQuery);
+          const youthPlayers = ySnap.docs.map(d => ({ id: d.id, ...d.data() } as PlayerDoc));
+          allPlayers = [...allPlayers, ...youthPlayers];
+        }
+
+        setPlayers(allPlayers);
 
         // Fetch club's active opportunities for invites
         const oppsQuery = query(
@@ -244,7 +263,9 @@ export const SearchPlayersPage = () => {
                   )}
                 </div>
                 
-                <h3 className="text-lg font-bold text-white mb-1">{player.name || 'Anonymous Player'}</h3>
+                <Link to={`/dashboard/club/player/${player.id}`} className="hover:text-brand transition-colors">
+                  <h3 className="text-lg font-bold text-white mb-1">{player.name || 'Anonymous Player'}</h3>
+                </Link>
                 
                 <div className="flex flex-wrap gap-2 mb-4">
                   {player.positions?.map(pos => (
@@ -270,19 +291,28 @@ export const SearchPlayersPage = () => {
                 </div>
               </div>
               
-              <div className="p-4 bg-dark-bg/50 border-t border-dark-border grid grid-cols-2 gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button
-                  onClick={() => handleShortlist(player)}
-                  className="w-full py-2 border border-dark-border text-text-secondary hover:text-white font-bold text-xs uppercase tracking-widest rounded transition-colors"
+              <div className="p-3 bg-dark-bg/60 border-t border-dark-border space-y-2">
+                <Link
+                  to={`/dashboard/club/player/${player.id}`}
+                  className="w-full py-2 bg-white/5 hover:bg-white/10 text-white font-bold text-xs uppercase tracking-widest rounded-lg transition-colors flex items-center justify-center gap-1.5 border border-white/10"
                 >
-                  Shortlist
-                </button>
-                <button
-                  onClick={() => setInvitingPlayer(player)}
-                  className="w-full py-2 bg-brand text-dark-bg font-bold text-xs uppercase tracking-widest rounded hover:bg-brand-hover transition-colors"
-                >
-                  Invite
-                </button>
+                  <Eye className="w-3.5 h-3.5 text-brand" />
+                  <span>View Dossier</span>
+                </Link>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => handleShortlist(player)}
+                    className="w-full py-1.5 border border-dark-border text-text-secondary hover:text-white font-bold text-[10px] uppercase tracking-widest rounded-lg transition-colors"
+                  >
+                    Shortlist
+                  </button>
+                  <button
+                    onClick={() => setInvitingPlayer(player)}
+                    className="w-full py-1.5 bg-brand text-dark-bg font-bold text-[10px] uppercase tracking-widest rounded-lg hover:bg-brand-hover transition-colors"
+                  >
+                    Invite
+                  </button>
+                </div>
               </div>
             </div>
           ))}

@@ -110,11 +110,8 @@ export const sendConsentInvite = onCall(async (request) => {
  * Guardian grants consent using the emailed token. Public portal — the caller
  * does NOT need to be signed in; the token itself is the authorization credential.
  */
-export const grantConsent = onCall(async (request) => {
-  const parsed = tokenSchema.safeParse(request.data ?? {});
-  if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid consent link.');
-
-  const tokenSnap = await adminDb.collection('consentTokens').doc(parsed.data.token).get();
+async function executeGrantConsent(token: string, guardianId?: string, clientIp?: string): Promise<{ ok: boolean; youthId: string }> {
+  const tokenSnap = await adminDb.collection('consentTokens').doc(token).get();
   if (!tokenSnap.exists) throw new HttpsError('not-found', 'This consent link is not valid.');
   const tokenRec = tokenSnap.data() ?? {};
 
@@ -126,8 +123,11 @@ export const grantConsent = onCall(async (request) => {
   }
 
   const youthId = String(tokenRec.youthId ?? '');
+  const youthRef = adminDb.collection('youthProfiles').doc(youthId);
+  const playerRef = adminDb.collection('players').doc(youthId);
+  const tokenDocRef = adminDb.collection('consentTokens').doc(token);
+
   await adminDb.runTransaction(async (tx) => {
-    const youthRef = tx.collection('youthProfiles').doc(youthId);
     const youthSnap = await tx.get(youthRef);
     if (!youthSnap.exists) throw new HttpsError('not-found', 'Youth profile not found.');
     const youth = youthSnap.data() ?? {};
@@ -140,20 +140,19 @@ export const grantConsent = onCall(async (request) => {
       privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
       updatedAt: FieldValue.serverTimestamp(),
     });
-    tx.update(tx.collection('players').doc(youthId), {
+    tx.update(playerRef, {
       searchable: true,
       consentStatus: 'granted',
       updatedAtMs: Date.now(),
     });
-    tx.update(tx.collection('consentTokens').doc(parsed.data.token), { status: 'used', usedAt: FieldValue.serverTimestamp() });
+    tx.update(tokenDocRef, { status: 'used', usedAt: FieldValue.serverTimestamp() });
   });
 
-  const guardianId = request.auth?.uid;
   await writeConsentAudit({
     youthId,
     guardianId: guardianId ?? '',
     action: 'granted',
-    hashedIp: request.rawRequest?.ip ? hash(request.rawRequest.ip) : '',
+    hashedIp: clientIp ? hash(clientIp) : '',
     privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
     source: 'consent_token',
   });
@@ -171,6 +170,16 @@ export const grantConsent = onCall(async (request) => {
   }
 
   return { ok: true, youthId };
+}
+
+/**
+ * Guardian grants consent using the emailed token. Public portal — the caller
+ * does NOT need to be signed in; the token itself is the authorization credential.
+ */
+export const grantConsent = onCall(async (request) => {
+  const parsed = tokenSchema.safeParse(request.data ?? {});
+  if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid consent link.');
+  return executeGrantConsent(parsed.data.token, request.auth?.uid, request.rawRequest?.ip);
 });
 
 /**
@@ -195,13 +204,16 @@ export const withdrawConsent = onCall(async (request) => {
     throw new HttpsError('permission-denied', 'Only the linked guardian or a safeguarding admin can withdraw consent.');
   }
 
+  const youthRef = adminDb.collection('youthProfiles').doc(parsed.data.youthId);
+  const playerRef = adminDb.collection('players').doc(parsed.data.youthId);
+
   await adminDb.runTransaction(async (tx) => {
-    tx.update(tx.collection('youthProfiles').doc(parsed.data.youthId), {
+    tx.update(youthRef, {
       consentStatus: 'withdrawn',
       withdrawnAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
-    tx.update(tx.collection('players').doc(parsed.data.youthId), {
+    tx.update(playerRef, {
       searchable: false,
       consentStatus: 'withdrawn',
       updatedAtMs: Date.now(),
@@ -233,12 +245,10 @@ export const withdrawConsent = onCall(async (request) => {
 export const reGrantConsent = onCall(async (request) => {
   const parsed = tokenSchema.safeParse(request.data ?? {});
   if (!parsed.success) throw new HttpsError('invalid-argument', 'Invalid consent link.');
-  await grantConsent(request);
-  const tokenSnap = await adminDb.collection('consentTokens').doc(parsed.data.token).get();
-  const youthId = String(tokenSnap.exists ? (tokenSnap.data()?.youthId ?? '') : '');
-  if (youthId) {
+  const res = await executeGrantConsent(parsed.data.token, request.auth?.uid, request.rawRequest?.ip);
+  if (res.youthId) {
     await writeConsentAudit({
-      youthId,
+      youthId: res.youthId,
       guardianId: request.auth?.uid ?? '',
       action: 're-granted',
       hashedIp: request.rawRequest?.ip ? hash(request.rawRequest.ip) : '',

@@ -33,7 +33,7 @@ export const createAccount = onCall(async (request) => {
             emailVerified: false,
         });
         const uid = user.uid;
-        const isYouth = extra.isYouth && Boolean(extra.dob) && isUnder18(extra.dob);
+        const isYouth = Boolean(extra.isYouth && typeof extra.dob === 'string' && isUnder18(extra.dob));
         await adminDb.collection('users').doc(uid).set({
             uid,
             email,

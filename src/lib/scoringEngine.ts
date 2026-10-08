@@ -27,35 +27,53 @@ export interface ScoreBreakdown {
   totalScore: number;
 }
 
-// Weights as per config (Section 5.1)
-const WEIGHTS = {
+const ADJACENT_PAIRS = new Set([
+  'RB:RWB', 'RWB:RB',
+  'LB:LWB', 'LWB:LB',
+  'CM:CDM', 'CDM:CM',
+  'CM:CAM', 'CAM:CM',
+  'ST:CF', 'CF:ST',
+  'RW:RM', 'RM:RW',
+  'LW:LM', 'LM:LW',
+  'CB:CDM', 'CDM:CB',
+]);
+
+// Default weights as per config (Section 5.1 & prompt specs)
+export const DEFAULT_WEIGHTS = {
   POSITION: 0.30,
   DISTANCE: 0.15,
   LEVEL: 0.20,
   ATTRIBUTES: 0.20,
   AVAILABILITY: 0.10,
-  BOOST: 0.05
+  BOOST: 0.05,
 };
+
+export type MatchingWeights = typeof DEFAULT_WEIGHTS;
 
 /**
  * Calculates a deterministic match score between a player and a club's preferences.
- * This is a pure function: no side effects, no randomness.
+ * This is a pure function: no side effects, no randomness, no AI.
  */
-export function calculateMatchScore(player: PlayerProfile, club: ClubPreferences): ScoreBreakdown {
-  // 1. Position Compatibility (30%)
-  // Exact match = 1.0, Adjacent = 0.5 (simplified for now), Incompatible = 0
+export function calculateMatchScore(
+  player: PlayerProfile,
+  club: ClubPreferences,
+  weights: MatchingWeights = DEFAULT_WEIGHTS
+): ScoreBreakdown {
+  // 1. Position Compatibility (Default 30%)
+  // Exact match = 1.0, Adjacent = 0.5, Incompatible = 0
   let positionScore = 0;
   const hasExactMatch = player.positions.some(p => club.targetPositions.includes(p));
   if (hasExactMatch) {
     positionScore = 1.0;
   } else if (player.positions.length > 0 && club.targetPositions.length > 0) {
-    // Basic fallback logic for adjacent positions could go here
-    // e.g. RWB & RB
-    positionScore = 0.5;
+    const hasAdjacent = player.positions.some(p =>
+      club.targetPositions.some(t => ADJACENT_PAIRS.has(`${p}:${t}`))
+    );
+    positionScore = hasAdjacent ? 0.5 : 0.0;
   }
   
-  // 2. Distance / Region (15%)
-  // Exact region match = 1.0
+  // 2. Distance / Region (Default 15%)
+  // Exact region match = 1.0, Different region = 0.0
   const distanceScore = player.region === club.region ? 1.0 : 0.0;
   
   // 3. Playing Level (20%)
@@ -86,25 +104,27 @@ export function calculateMatchScore(player: PlayerProfile, club: ClubPreferences
   // 6. Visibility / Boost Status (5%)
   const boostScore = player.hasActiveBoost ? 1.0 : 0.0;
 
-  // Calculate Weighted Totals
+  // Calculate Weighted Totals using provided weights
   const breakdown: ScoreBreakdown = {
-    positionMatch: positionScore * WEIGHTS.POSITION,
-    distanceMatch: distanceScore * WEIGHTS.DISTANCE,
-    levelMatch: levelScore * WEIGHTS.LEVEL,
-    attributesMatch: attributeScore * WEIGHTS.ATTRIBUTES,
-    availabilityMatch: availabilityScore * WEIGHTS.AVAILABILITY,
-    boostMatch: boostScore * WEIGHTS.BOOST,
-    totalScore: 0
+    positionMatch: positionScore * weights.POSITION,
+    distanceMatch: distanceScore * weights.DISTANCE,
+    levelMatch: levelScore * weights.LEVEL,
+    attributesMatch: attributeScore * weights.ATTRIBUTES,
+    availabilityMatch: availabilityScore * weights.AVAILABILITY,
+    boostMatch: boostScore * weights.BOOST,
+    totalScore: 0,
   };
 
-  breakdown.totalScore = Number((
+  const rawSum =
     breakdown.positionMatch +
     breakdown.distanceMatch +
     breakdown.levelMatch +
     breakdown.attributesMatch +
     breakdown.availabilityMatch +
-    breakdown.boostMatch
-  ).toFixed(3)); // Store as numeric(4,3) as per DB schema
+    breakdown.boostMatch;
+
+  // Strict clamp between 0.0 and 1.0, formatted to 3 decimal places
+  breakdown.totalScore = Number(Math.max(0, Math.min(1, rawSum)).toFixed(3));
 
   return breakdown;
 }

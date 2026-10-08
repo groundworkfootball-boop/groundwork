@@ -49,7 +49,7 @@ export const initiateVideoUpload = onCall(async (request) => {
   if (!VIDEO_LIMITS.allowedMimeTypes.includes(mimeType as (typeof VIDEO_LIMITS.allowedMimeTypes)[number])) {
     throw new HttpsError('invalid-argument', 'Unsupported video format.');
   }
-  if (!VIDEO_LIMITS.allowedExtensions.includes(extOf(fileName))) {
+  if (!(VIDEO_LIMITS.allowedExtensions as readonly string[]).includes(extOf(fileName))) {
     throw new HttpsError('invalid-argument', 'Unsupported file extension.');
   }
   if (sizeBytes <= 0 || sizeBytes > VIDEO_LIMITS.maxBytes) {

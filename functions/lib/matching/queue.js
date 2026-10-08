@@ -108,7 +108,7 @@ export async function scorePair(playerDoc, playerUpdatedAtMs, clubDoc) {
 /** Recompute one player against every eligible club (player profile change). */
 export async function recalcPlayer(playerId) {
     const playerSnap = await adminDb.collection('players').doc(playerId).get();
-    if (!playerSnap.exists()) {
+    if (!playerSnap.exists) {
         await removePlayerMatchResults(playerId);
         return { scored: 0 };
     }
@@ -132,7 +132,7 @@ export async function recalcPlayer(playerId) {
     const updatedAtMs = data.updatedAtMs ?? Date.now();
     if (playerDoc.isYouth) {
         const youthSnap = await adminDb.collection('youthProfiles').doc(playerId).get();
-        if (youthSnap.exists() && youthSnap.data()?.consentStatus !== 'granted') {
+        if (youthSnap.exists && youthSnap.data()?.consentStatus !== 'granted') {
             await removePlayerMatchResults(playerId);
             return { scored: 0 };
         }
@@ -160,7 +160,7 @@ export async function recalcPlayer(playerId) {
 /** Recompute every player against a single club (club profile change / config change). */
 export async function recalcClub(clubId) {
     const clubSnap = await adminDb.collection('clubs').doc(clubId).get();
-    if (!clubSnap.exists())
+    if (!clubSnap.exists)
         return { scored: 0 };
     const clubData = clubSnap.data() ?? {};
     const clubDoc = {
@@ -180,7 +180,7 @@ export async function recalcClub(clubId) {
         const data = playerSnap.data() ?? {};
         if (data.isYouth === true) {
             const youthSnap = await adminDb.collection('youthProfiles').doc(playerSnap.id).get();
-            if (youthSnap.exists() && youthSnap.data()?.consentStatus !== 'granted')
+            if (youthSnap.exists && youthSnap.data()?.consentStatus !== 'granted')
                 continue;
         }
         const playerDoc = {

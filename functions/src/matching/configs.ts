@@ -35,8 +35,14 @@ export const updateMatchingConfig = onCall(async (request) => {
   }
 
   const weights = parsed.data;
-  const inputs: Record<string, number> = {};
-  for (const key of WEIGHT_KEYS_SET) inputs[key] = normalizeWeight(weights[key]);
+  const inputs: Record<string, number> = {
+    positionWeight: normalizeWeight(weights.positionWeight),
+    distanceWeight: normalizeWeight(weights.distanceWeight),
+    levelWeight: normalizeWeight(weights.levelWeight),
+    attributesWeight: normalizeWeight(weights.attributesWeight),
+    availabilityWeight: normalizeWeight(weights.availabilityWeight),
+    boostWeight: normalizeWeight(weights.boostWeight),
+  };
   if (!validateWeightsSum(inputs)) {
     return { error: 'weights must sum to 1.0 (100%)', data: inputs };
   }
