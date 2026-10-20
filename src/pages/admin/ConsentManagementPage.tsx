@@ -1,118 +1,187 @@
-import { useState, useEffect } from 'react';
-import { db } from '../../lib/firebase';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import { collection, getDocs, limit, query } from 'firebase/firestore';
+import { FileCheck2, RefreshCw, Search, ShieldCheck } from 'lucide-react';
+import { db } from '../../lib/firebase';
 import type { ConsentAuditRecord } from '../../app/types';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { TableSkeleton } from '../../components/ui/Skeleton';
+
+const ACTION_TONE = {
+  granted: 'emerald',
+  're-granted': 'emerald',
+  withdrawn: 'rose',
+} as const;
+
+function formatDate(seconds?: number): string {
+  if (!seconds) return '—';
+  return new Date(seconds * 1000).toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 export const ConsentManagementPage = () => {
   const [logs, setLogs] = useState<ConsentAuditRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
-  useEffect(() => {
-    loadAudits();
-  }, []);
-
-  const loadAudits = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const snap = await getDocs(query(collection(db, 'consentAudit'), limit(50)));
-      const items = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<ConsentAuditRecord, 'id'>),
+      const snapshot = await getDocs(query(collection(db, 'consentAudits'), limit(200)));
+      const rows = snapshot.docs.map((entry) => ({
+        id: entry.id,
+        ...(entry.data() as Omit<ConsentAuditRecord, 'id'>),
       }));
-
-      if (items.length === 0) {
-        items.push({
-          id: 'log-seed-1',
-          youthId: 'player-youth-01',
-          guardianId: 'guardian-sarah@example.com',
-          action: 'granted',
-          timestamp: { seconds: Math.floor(Date.now() / 1000) - 3600 },
-          privacyNoticeVersion: '2026.1-EN',
-          source: 'guardian_portal',
-        });
-      }
-
-      setLogs(items);
+      rows.sort((a, b) => (b.timestamp?.seconds ?? 0) - (a.timestamp?.seconds ?? 0));
+      setLogs(rows);
     } catch (err) {
       console.error(err);
+      setError('We could not load the consent audit trail. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return logs;
+    return logs.filter(
+      (log) =>
+        (log.youthId ?? '').toLowerCase().includes(term) ||
+        (log.guardianId ?? '').toLowerCase().includes(term) ||
+        (log.action ?? '').toLowerCase().includes(term),
+    );
+  }, [logs, search]);
 
   if (loading) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-brand animate-spin" />
+      <div className="space-y-6">
+        <PageHeader eyebrow="Safeguarding" title="Consent audit trail" />
+        <TableSkeleton rows={8} cols={5} />
       </div>
     );
   }
 
+  if (error) return <ErrorState description={error} onRetry={load} />;
+
+  const granted = logs.filter((l) => l.action === 'granted' || l.action === 're-granted').length;
+  const withdrawn = logs.filter((l) => l.action === 'withdrawn').length;
+
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-12">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Safeguarding"
+        title="Consent audit trail"
+        description="Append-only and immutable. Written exclusively by Cloud Functions."
+        actions={
+          <Button variant="secondary" size="sm" onClick={load} iconLeft={<RefreshCw className="h-3.5 w-3.5" />}>
+            Refresh
+          </Button>
+        }
+      />
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card padding="sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Total records</p>
+          <p className="gw-numeric mt-2 text-[24px] font-bold text-white">{logs.length}</p>
+        </Card>
+        <Card padding="sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Grants</p>
+          <p className="gw-numeric mt-2 text-[24px] font-bold text-emerald-300">{granted}</p>
+        </Card>
+        <Card padding="sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Withdrawals</p>
+          <p className="gw-numeric mt-2 text-[24px] font-bold text-rose-300">{withdrawn}</p>
+        </Card>
+      </div>
+
+      <div className="flex items-start gap-3 rounded-2xl border border-emerald-400/25 bg-emerald-400/[0.06] p-4">
+        <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-400" />
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-brand font-bold text-xs uppercase tracking-widest">Legal Ledger</span>
-          </div>
-          <h1 className="text-3xl font-black uppercase text-white tracking-tight">Consent & Safeguarding Audit Ledger</h1>
-          <p className="text-sm text-slate-400">
-            Append-only record of all parental permissions, renewals, and revocations for youth talent.
+          <p className="text-[13px] font-semibold text-emerald-100">Immutable by design</p>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-emerald-200/80">
+            No client can create, update or delete these records. They are retained under statutory safeguarding
+            obligations even when a GDPR erasure request is fulfilled.
           </p>
         </div>
-
-        <button
-          onClick={loadAudits}
-          className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span>Refresh</span>
-        </button>
       </div>
 
-      <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-6">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="text-[11px] uppercase bg-white/5 text-slate-400 border-b border-white/10">
-              <tr>
-                <th className="px-4 py-3">Action</th>
-                <th className="px-4 py-3">Youth Record</th>
-                <th className="px-4 py-3">Guardian Identifier</th>
-                <th className="px-4 py-3">Policy Spec</th>
-                <th className="px-4 py-3">Origin</th>
-                <th className="px-4 py-3 text-right">Server Timestamp</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {logs.map((log) => (
-                <tr key={log.id} className="hover:bg-white/5 transition-colors">
-                  <td className="px-4 py-3 font-bold uppercase font-mono">
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] ${
-                        log.action === 'granted'
-                          ? 'text-emerald-400 bg-emerald-400/10 border border-emerald-400/30'
-                          : 'text-red-400 bg-red-400/10 border border-red-400/30'
-                      }`}
-                    >
-                      {log.action}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 font-mono text-white">{log.youthId}</td>
-                  <td className="px-4 py-3 font-mono text-slate-400">{log.guardianId}</td>
-                  <td className="px-4 py-3 font-mono">{log.privacyNoticeVersion}</td>
-                  <td className="px-4 py-3 capitalize">{log.source.replace('_', ' ')}</td>
-                  <td className="px-4 py-3 text-right text-slate-400">
-                    {log.timestamp?.seconds
-                      ? new Date(log.timestamp.seconds * 1000).toLocaleString()
-                      : 'Recorded'}
-                  </td>
+      <Card padding="sm">
+        <Input
+          placeholder="Search by youth ID, guardian ID or action"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          iconLeft={<Search className="h-4 w-4" />}
+          aria-label="Search consent records"
+        />
+      </Card>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          icon={<FileCheck2 className="h-6 w-6" />}
+          title="No consent records"
+          description={
+            search
+              ? 'No record matches that search.'
+              : 'Consent grants and withdrawals will appear here as guardians act.'
+          }
+        />
+      ) : (
+        <Card padding="none" className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-white/[0.08] bg-white/[0.03]">
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Action</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Youth</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Guardian</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Notice</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Timestamp</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+              </thead>
+              <tbody>
+                {filtered.map((log) => (
+                  <tr key={log.id} className="border-b border-white/[0.05] last:border-0">
+                    <td className="px-4 py-3">
+                      <Badge tone={ACTION_TONE[log.action] ?? 'slate'} dot>
+                        {log.action}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[11px] text-slate-400">
+                      {log.youthId?.slice(0, 14) ?? '—'}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-[11px] text-slate-400">
+                      {log.guardianId?.slice(0, 14) ?? '—'}
+                    </td>
+                    <td className="px-4 py-3 text-[11.5px] text-slate-500">
+                      v{log.privacyNoticeVersion ?? '1.0'}
+                    </td>
+                    <td className="px-4 py-3 text-[11.5px] text-slate-500">
+                      {formatDate(log.timestamp?.seconds)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 };
+

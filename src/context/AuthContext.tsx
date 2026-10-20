@@ -1,9 +1,8 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+﻿import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { auth, db } from '../lib/firebase';
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
   signOut as firebaseSignOut,
   sendPasswordResetEmail,
   sendEmailVerification,
@@ -12,12 +11,9 @@ import {
   type User as FirebaseUser,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-
-import {
-  saveRememberedAccount,
-  setActiveSession,
-  clearActiveSession,
-} from '../lib/sessionStorage';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../lib/firebase';
+import { saveRememberedAccount, setActiveSession, clearActiveSession } from '../lib/sessionStorage';
 
 export type Role = 'player' | 'guardian' | 'club' | 'admin';
 
@@ -32,6 +28,24 @@ export interface AppUser {
   [key: string]: unknown;
 }
 
+export interface RegisterExtra {
+  dob?: string;
+  isYouth?: boolean;
+  positions?: string[];
+  primaryPosition?: string;
+  secondaryPosition?: string | null;
+  playingLevel?: number;
+  region?: string;
+  availability?: string[];
+  guardianName?: string;
+  guardianEmail?: string;
+  guardianRelationship?: string;
+  clubName?: string;
+  league?: string;
+  clubType?: string;
+  preferredRadiusKm?: number;
+}
+
 interface AuthContextType {
   role: Role | null;
   isAuthenticated: boolean;
@@ -40,12 +54,20 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, pass: string, remember?: boolean) => Promise<void>;
   loginWithGoogle: (fallbackRole?: Role) => Promise<void>;
-  register: (email: string, pass: string, role: Role, name: string, extra?: Record<string, unknown>) => Promise<void>;
+  register: (email: string, pass: string, role: Role, name: string, extra?: RegisterExtra) => Promise<void>;
   logout: () => Promise<void>;
   sendReset: (email: string) => Promise<void>;
+  resendVerification: () => Promise<void>;
+  refreshClaims: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const VALID_ROLES: Role[] = ['player', 'guardian', 'club', 'admin'];
+
+function normaliseRole(value: unknown): Role | null {
+  return typeof value === 'string' && (VALID_ROLES as string[]).includes(value) ? (value as Role) : null;
+}
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [role, setRole] = useState<Role | null>(null);
@@ -56,84 +78,90 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser) {
-        setFirebaseUser(fbUser);
-        try {
-          const [tokenResult, userSnap] = await Promise.all([
-            fbUser.getIdTokenResult(true).catch(() => null),
-            getDoc(doc(db, 'users', fbUser.uid)),
-          ]);
-
-          const claimRole = (tokenResult?.claims?.role as Role | undefined) ?? null;
-          const profile = userSnap.exists() ? userSnap.data() : {};
-          const userRole: Role = claimRole ?? ((profile.role as Role | undefined) ?? 'player');
-          const userName = (profile.name as string) ?? fbUser.displayName ?? fbUser.email ?? 'User';
-
-          const appUser: AppUser = {
-            uid: fbUser.uid,
-            email: fbUser.email,
-            emailVerified: fbUser.emailVerified,
-            name: userName,
-            role: userRole,
-            claimsRole: claimRole,
-            photoUrl: (profile.photoUrl as string) ?? fbUser.photoURL ?? undefined,
-            ...profile,
-          };
-
-          setRole(userRole);
-          setUser(appUser);
-          setIsAuthenticated(true);
-
-          // Synchronize session storage & remembered account in device storage
-          saveRememberedAccount({
-            uid: fbUser.uid,
-            email: fbUser.email ?? '',
-            name: userName,
-            role: userRole,
-            avatarUrl: appUser.photoUrl,
-            verified: !!(profile.verifiedAdult || fbUser.emailVerified || (profile.profileCompleteness && Number(profile.profileCompleteness) >= 80)),
-            clubCode: (profile.clubCode as string) ?? undefined,
-          });
-          setActiveSession({
-            uid: fbUser.uid,
-            email: fbUser.email ?? '',
-            name: userName,
-            role: userRole,
-            avatarUrl: appUser.photoUrl,
-            lastLoginAt: Date.now(),
-            verified: !!(profile.verifiedAdult || fbUser.emailVerified || (profile.profileCompleteness && Number(profile.profileCompleteness) >= 80)),
-            clubCode: (profile.clubCode as string) ?? undefined,
-          });
-        } catch (err) {
-          console.error('Error fetching user profile:', err);
-          setIsAuthenticated(true);
-          const fallbackUser: AppUser = {
-            uid: fbUser.uid,
-            email: fbUser.email,
-            emailVerified: fbUser.emailVerified,
-            name: fbUser.email ?? 'User',
-            role: 'player',
-            claimsRole: null,
-          };
-          setUser(fallbackUser);
-          setRole('player');
-          setActiveSession({
-            uid: fbUser.uid,
-            email: fbUser.email ?? '',
-            name: fbUser.email ?? 'User',
-            role: 'player',
-            lastLoginAt: Date.now(),
-          });
-        }
-      } else {
+      if (!fbUser) {
         setFirebaseUser(null);
         setRole(null);
         setUser(null);
         setIsAuthenticated(false);
         clearActiveSession();
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      setFirebaseUser(fbUser);
+
+      try {
+        const [tokenResult, userSnap] = await Promise.all([
+          fbUser.getIdTokenResult(true).catch(() => null),
+          getDoc(doc(db, 'users', fbUser.uid)).catch(() => null),
+        ]);
+
+        const claimRole = normaliseRole(tokenResult?.claims?.role);
+        const profile = userSnap?.exists() ? userSnap.data() : {};
+        // Custom claims are authoritative. The Firestore document is only a fallback
+        // for accounts created before claims were provisioned.
+        const resolvedRole: Role = claimRole ?? normaliseRole(profile.role) ?? 'player';
+        const displayName =
+          (profile.name as string | undefined) ?? fbUser.displayName ?? fbUser.email ?? 'Member';
+
+        const appUser: AppUser = {
+          ...profile,
+          uid: fbUser.uid,
+          email: fbUser.email,
+          emailVerified: fbUser.emailVerified,
+          name: displayName,
+          role: resolvedRole,
+          claimsRole: claimRole,
+          photoUrl: (profile.photoUrl as string | undefined) ?? fbUser.photoURL ?? undefined,
+        };
+
+        setRole(resolvedRole);
+        setUser(appUser);
+        setIsAuthenticated(true);
+
+        const verified = Boolean(
+          profile.verifiedAdult ||
+            fbUser.emailVerified ||
+            (typeof profile.profileCompleteness === 'number' && profile.profileCompleteness >= 80),
+        );
+
+        saveRememberedAccount({
+          uid: fbUser.uid,
+          email: fbUser.email ?? '',
+          name: displayName,
+          role: resolvedRole,
+          avatarUrl: appUser.photoUrl,
+          verified,
+          clubCode: (profile.clubCode as string | undefined) ?? undefined,
+        });
+        setActiveSession({
+          uid: fbUser.uid,
+          email: fbUser.email ?? '',
+          name: displayName,
+          role: resolvedRole,
+          avatarUrl: appUser.photoUrl,
+          lastLoginAt: Date.now(),
+          verified,
+          clubCode: (profile.clubCode as string | undefined) ?? undefined,
+        });
+      } catch (err) {
+        console.error('Failed to resolve user profile', err);
+        // Fail closed: never grant a privileged role when the profile cannot be read.
+        setRole('player');
+        setUser({
+          uid: fbUser.uid,
+          email: fbUser.email,
+          emailVerified: fbUser.emailVerified,
+          name: fbUser.displayName ?? fbUser.email ?? 'Member',
+          role: 'player',
+          claimsRole: null,
+        });
+        setIsAuthenticated(true);
+      } finally {
+        setLoading(false);
+      }
     });
+
     return () => unsubscribe();
   }, []);
 
@@ -146,19 +174,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     provider.setCustomParameters({ prompt: 'select_account' });
     const result = await signInWithPopup(auth, provider);
 
-    await setDoc(
-      doc(db, 'users', result.user.uid),
-      {
+    // Only create the profile document if it does not already exist. Role is never
+    // taken from the client for an existing account.
+    const userRef = doc(db, 'users', result.user.uid);
+    const existing = await getDoc(userRef);
+    if (!existing.exists()) {
+      const safeRole: Role = fallbackRole === 'admin' ? 'player' : fallbackRole;
+      await setDoc(userRef, {
         uid: result.user.uid,
         email: result.user.email,
-        name: result.user.displayName ?? result.user.email ?? 'User',
-        role: fallbackRole,
+        name: result.user.displayName ?? result.user.email ?? 'Member',
+        role: safeRole,
         emailVerified: result.user.emailVerified,
-        updatedAt: serverTimestamp(),
         createdAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
+        updatedAt: serverTimestamp(),
+      });
+    }
   };
 
   const register = async (
@@ -166,78 +197,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     pass: string,
     selectedRole: Role,
     name: string,
-    extra?: Record<string, unknown>,
+    extra: RegisterExtra = {},
   ) => {
-    const cred = await createUserWithEmailAndPassword(auth, email, pass);
-    const uid = cred.user.uid;
-
-    const isYouth = extra?.isYouth === true;
-
-    // Write to users collection (source of role truth)
-    await setDoc(doc(db, 'users', uid), {
-      uid,
-      email,
-      name,
-      role: selectedRole,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      emailVerified: false,
-      disabled: false,
-    });
-
-    // Write role-specific document
-    if (selectedRole === 'player') {
-      await setDoc(doc(db, 'players', uid), {
-        uid,
-        email,
-        name,
-        role: 'player',
-        isYouth,
-        searchable: !isYouth,
-        consentStatus: isYouth ? 'pending' : 'n/a',
-        profileComplete: 0,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        ...(isYouth && extra?.dob ? { dob: extra.dob } : {}),
-      });
-
-      // Youth safeguarding: create a youthProfiles record
-      if (isYouth && extra) {
-        await setDoc(doc(db, 'youthProfiles', uid), {
-          playerId: uid,
-          guardianName: extra.guardianName ?? '',
-          guardianEmail: extra.guardianEmail ?? '',
-          relationship: extra.relationship ?? '',
-          consentStatus: 'pending',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
-      }
-    } else if (selectedRole === 'guardian') {
-      await setDoc(doc(db, 'guardians', uid), {
-        uid,
-        email,
-        name,
-        role: 'guardian',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    } else if (selectedRole === 'club') {
-      await setDoc(doc(db, 'clubs', uid), {
-        uid,
-        email,
-        name,
-        role: 'club',
-        verificationStatus: 'pending',
-        verifiedAdult: false,
-        verifiedYouth: false,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+    if (selectedRole === 'admin') {
+      throw new Error('Administrator accounts cannot be created through registration.');
     }
 
-    // Send verification email (non-blocking)
-    sendEmailVerification(cred.user).catch(console.warn);
+    const createAccount = httpsCallable<
+      { email: string; password: string; role: Role; name: string; extra: RegisterExtra },
+      { uid: string; role: string; isYouth: boolean; clubCode?: string }
+    >(functions, 'createAccount');
+
+    await createAccount({ email, password: pass, role: selectedRole, name, extra });
+
+    // Sign in with the freshly provisioned credentials so the client picks up claims.
+    const credential = await signInWithEmailAndPassword(auth, email, pass);
+    await credential.user.getIdToken(true);
+
+    if (!credential.user.emailVerified) {
+      sendEmailVerification(credential.user).catch(() => {
+        /* non-blocking: user can resend from the verify screen */
+      });
+    }
   };
 
   const logout = async () => {
@@ -248,16 +229,40 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await sendPasswordResetEmail(auth, email);
   };
 
-  return (
-    <AuthContext.Provider
-      value={useMemo(
-        () => ({ role, isAuthenticated, user, firebaseUser, loading, login, loginWithGoogle, register, logout, sendReset }),
-        [role, isAuthenticated, user, firebaseUser, loading],
-      )}
-    >
-      {!loading && children}
-    </AuthContext.Provider>
+  const resendVerification = async () => {
+    if (!auth.currentUser) throw new Error('You must be signed in to resend verification.');
+    await sendEmailVerification(auth.currentUser);
+  };
+
+  const refreshClaims = async () => {
+    if (!auth.currentUser) return;
+    const token = await auth.currentUser.getIdTokenResult(true);
+    const nextRole = normaliseRole(token.claims.role);
+    if (nextRole) {
+      setRole(nextRole);
+      setUser((prev) => (prev ? { ...prev, role: nextRole, claimsRole: nextRole } : prev));
+    }
+  };
+
+  const value = useMemo(
+    () => ({
+      role,
+      isAuthenticated,
+      user,
+      firebaseUser,
+      loading,
+      login,
+      loginWithGoogle,
+      register,
+      logout,
+      sendReset,
+      resendVerification,
+      refreshClaims,
+    }),
+    [role, isAuthenticated, user, firebaseUser, loading],
   );
+
+  return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {

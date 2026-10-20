@@ -1,241 +1,477 @@
 rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GROUNDWORK — Firestore Security Rules
+//
+// Design principles:
+//   1. Deny by default. Every collection is explicitly opened.
+//   2. Custom claims are authoritative for role. The users/{uid}.role document
+//      field is never trusted for authorization decisions.
+//   3. Youth data is protected by consent + club youth verification + expiry,
+//      evaluated server-side on every read.
+//   4. Scores, verification, consent and payment state are server-write-only.
+//   5. Audit and consent trails are append-only and immutable.
+// ─────────────────────────────────────────────────────────────────────────────
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // ─── Security Foundation ─────────────────────────────────────────────
-    // Deny everything bdy default
+
+    // ── Default deny ────────────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // ─── Helper Functions ─────────────────────────────────────────────────
-    function isAuthenticated() {
+    // ── Helpers ─────────────────────────────────────────────────────────────
+    function signedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function claimRole() {
+      return signedIn() ? request.auth.token.role : null;
     }
 
     function isAdmin() {
-      return isAuthenticated() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return signedIn() && claimRole() == 'admin';
     }
 
-    function isClub() {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'club';
+    function isSuperAdmin() {
+      return signedIn() && request.auth.token.isSuperAdmin == true;
+    }
+
+    function isModerator() {
+      return isAdmin() && (request.auth.token.isModerator == true || request.auth.token.isSuperAdmin == true);
+    }
+
+    function isSafeguardingAdmin() {
+      return isAdmin() && (request.auth.token.isSafeguardingAdmin == true || request.auth.token.isSuperAdmin == true);
+    }
+
+    function isFinanceAdmin() {
+      return isAdmin() && (request.auth.token.isFinanceAdmin == true || request.auth.token.isSuperAdmin == true);
     }
 
     function isPlayer() {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'player';
+      return signedIn() && claimRole() == 'player';
     }
 
     function isGuardian() {
-      return isAuthenticated() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guardian';
+      return signedIn() && claimRole() == 'guardian';
     }
 
-    function isVerifiedYouthClub() {
-      return isClub() &&
-        exists(/databases/$(database)/documents/clubs/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/clubs/$(request.auth.uid)).data.get('verifiedYouth', false) == true;
+    function isClub() {
+      return signedIn() && claimRole() == 'club';
     }
 
-    // ─── Users ──────────────────────────────────────────────────────────
+    function isOwner(userId) {
+      return signedIn() && uid() == userId;
+    }
+
+    // Club document for the calling user (null-safe).
+    function myClub() {
+      return get(/databases/$(database)/documents/clubs/$(uid())).data;
+    }
+
+    function clubExists() {
+      return signedIn() && exists(/databases/$(database)/documents/clubs/$(uid()));
+    }
+
+    // Youth verification must be granted AND unexpired.
+    function youthVerificationLive() {
+      return isClub()
+        && clubExists()
+        && myClub().verifiedYouth == true
+        && myClub().verificationStatus == 'approved'
+        && myClub().youthVerificationExpiresAt != null
+        && myClub().youthVerificationExpiresAt > request.time;
+    }
+
+    function adultVerificationLive() {
+      return isClub()
+        && clubExists()
+        && myClub().verifiedAdult == true
+        && myClub().verificationStatus == 'approved';
+    }
+
+    // A youth profile is only readable when consent is granted AND searchable.
+    function youthVisibleToClubs() {
+      return youthVerificationLive()
+        && resource.data.isYouth == true
+        && resource.data.consentStatus == 'granted'
+        && resource.data.searchable == true;
+    }
+
+    function adultVisibleToClubs() {
+      return adultVerificationLive()
+        && resource.data.isYouth != true
+        && resource.data.searchable == true;
+    }
+
+    function isGuardianOfYouth() {
+      return isGuardian()
+        && resource.data.guardianEmail is string
+        && resource.data.guardianEmail == request.auth.token.email;
+    }
+
+    // Fields a player may never write directly (server-owned).
+    function playerProtectedFields() {
+      return [
+        'profileCompleteness', 'searchable', 'consentStatus', 'consentGrantedAt',
+        'verified', 'verifiedBy', 'adminNotes', 'isYouth', 'role', 'boostStatus',
+        'boostStartedAt', 'boostExpiresAt', 'boostProduct', 'stripePaymentId',
+        'matchScore', 'scoreBreakdown', 'suspended', 'disabled'
+      ];
+    }
+
+    function clubProtectedFields() {
+      return [
+        'verificationStatus', 'verifiedAdult', 'verifiedYouth', 'youthVerificationExpiresAt',
+        'adultVerificationExpiresAt', 'verificationReviewedBy', 'verificationReviewedAt',
+        'adminNotes', 'suspended', 'role', 'subscriptionTier', 'subscriptionStatus',
+        'stripeCustomerId', 'stripeSubscriptionId'
+      ];
+    }
+
+    // ── Users ───────────────────────────────────────────────────────────────
+    // Created exclusively by the createAccount Cloud Function (Admin SDK).
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isOwner(userId);
-      allow update: if (isOwner(userId) && 
-                    !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'disabled']))
-                   || isAdmin();
-      allow delete: if isAdmin();
+      allow create: if false;
+      allow update: if isOwner(userId)
+        && !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['role', 'disabled', 'suspended', 'emailVerified', 'claimsVersion'])
+        || isAdmin();
+      allow delete: if isSuperAdmin();
     }
 
-    // ─── Player Profiles ─────────────────────────────────────────────────
-    match /players/{userId} {
-      // Adult players: searchable by clubs, or read by owner / admin
-      // Youth players: strictly restricted to owner, verified youth club, guardian, or admin
-      allow read: if isOwner(userId) || isAdmin() ||
-                  (isClub() && resource.data.searchable == true && resource.data.get('isYouth', false) == false) ||
-                  (isVerifiedYouthClub() && resource.data.searchable == true && resource.data.get('isYouth', false) == true && resource.data.get('consentStatus', 'pending') == 'granted') ||
-                  (isGuardian() && resource.data.get('guardianEmail', '') == request.auth.token.email);
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) && 
-                    !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verified', 'adminNotes', 'score'])
-                   || isAdmin();
-      allow delete: if isAdmin();
+    // ── Player profiles ─────────────────────────────────────────────────────
+    match /players/{playerId} {
+      allow read: if isOwner(playerId)
+        || isAdmin()
+        || adultVisibleToClubs()
+        || youthVisibleToClubs()
+        || isGuardianOfYouth();
+
+      allow create: if false; // created by createAccount
+
+      allow update: if (isOwner(playerId)
+          && !request.resource.data.diff(resource.data).affectedKeys()
+               .hasAny(playerProtectedFields()))
+        || isAdmin();
+
+      allow delete: if isSuperAdmin();
     }
 
-    // ─── Guardians ────────────────────────────────────────────────────────
+    // ── Youth profiles (safeguarding-critical) ──────────────────────────────
+    match /youthProfiles/{youthId} {
+      allow read: if isOwner(youthId)
+        || isSafeguardingAdmin()
+        || (isGuardian() && resource.data.guardianEmail == request.auth.token.email)
+        || (youthVerificationLive()
+            && resource.data.consentStatus == 'granted'
+            && resource.data.searchable == true);
+      allow create: if false;
+      allow update: if isSafeguardingAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    // ── Guardians ───────────────────────────────────────────────────────────
     match /guardians/{guardianId} {
       allow read: if isOwner(guardianId) || isAdmin();
-      allow create, update: if isOwner(guardianId) || isAdmin();
-      allow delete: if isAdmin();
+      allow create: if false;
+      allow update: if isOwner(guardianId)
+        && !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['linkedYouthIds', 'role', 'verified'])
+        || isAdmin();
+      allow delete: if isSuperAdmin();
     }
 
-    // ─── Club Profiles ───────────────────────────────────────────────────
+    // ── Clubs ───────────────────────────────────────────────────────────────
+    // Public club identity is readable by signed-in users; private fields are
+    // separated into clubs/{id}/private/data.
     match /clubs/{clubId} {
-      allow read: if isAuthenticated();
-      allow create: if isOwner(clubId);
-      allow update: if isOwner(clubId) && 
-                    !request.resource.data.diff(resource.data).affectedKeys().hasAny(['verificationStatus', 'verifiedAdult', 'verifiedYouth', 'adminNotes'])
-                   || isAdmin();
-      allow delete: if isAdmin();
+      allow read: if signedIn();
+      allow create: if false;
+      allow update: if (isOwner(clubId)
+          && !request.resource.data.diff(resource.data).affectedKeys()
+               .hasAny(clubProtectedFields()))
+        || isAdmin();
+      allow delete: if isSuperAdmin();
     }
 
-    // ─── Club Invites & Code Management ──────────────────────────────────
-    match /clubInvites/{inviteId} {
-      allow read: if isAuthenticated();
-      allow create: if isClub() && request.resource.data.clubId == request.auth.uid;
-      allow update: if (isClub() && resource.data.clubId == request.auth.uid) || isAuthenticated() || isAdmin();
-      allow delete: if (isClub() && resource.data.clubId == request.auth.uid) || isAdmin();
+    match /clubs/{clubId}/private/{docId} {
+      allow read, write: if isOwner(clubId) || isAdmin();
     }
 
-    // ─── Squad Members ────────────────────────────────────────────────────
-    match /squadMembers/{memberId} {
-      allow read: if isAuthenticated();
-      allow create: if isClub() && request.resource.data.clubId == request.auth.uid;
-      allow update, delete: if (isClub() && resource.data.clubId == request.auth.uid) || isAdmin();
+    // ── Club verification submissions ───────────────────────────────────────
+    match /clubVerifications/{verificationId} {
+      allow read: if isOwner(resource.data.clubId) || isAdmin();
+      allow create: if isClub() && request.resource.data.clubId == uid()
+        && request.resource.data.status == 'pending';
+      allow update: if isAdmin();
+      allow delete: if isSuperAdmin();
     }
 
-    // ─── Player Videos ───────────────────────────────────────────────────
+    match /youthVerifications/{verificationId} {
+      allow read: if isOwner(resource.data.clubId) || isSafeguardingAdmin();
+      allow create: if isClub() && request.resource.data.clubId == uid()
+        && request.resource.data.status == 'pending';
+      allow update: if isSafeguardingAdmin();
+      allow delete: if isSuperAdmin();
+    }
+
+    // ── Videos ──────────────────────────────────────────────────────────────
     match /playerVideos/{videoId} {
-      allow read: if isAuthenticated();
-      allow create: if isPlayer() && request.resource.data.playerId == request.auth.uid;
-      allow update, delete: if (isPlayer() && resource.data.playerId == request.auth.uid) || isAdmin();
+      allow read: if isOwner(resource.data.playerId)
+        || isAdmin()
+        || (resource.data.published == true
+            && resource.data.processingStatus == 'ready'
+            && resource.data.isYouth != true
+            && adultVerificationLive())
+        || (resource.data.published == true
+            && resource.data.processingStatus == 'ready'
+            && resource.data.isYouth == true
+            && youthVerificationLive()
+            && resource.data.consentStatus == 'granted');
+      allow create: if false; // created by initiateVideoUpload
+      allow update: if isOwner(resource.data.playerId)
+        && !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['processingStatus', 'aiTags', 'aiSummary', 'aiSuggestion',
+                      'storagePath', 'processedPath', 'thumbnailPath', 'durationSeconds',
+                      'moderationStatus', 'isYouth', 'consentStatus'])
+        || isModerator();
+      allow delete: if isOwner(resource.data.playerId) || isAdmin();
     }
 
-    // ─── Youth Profiles (Safeguarding-Critical) ──────────────────────────
-    match /youthProfiles/{userId} {
-      allow read: if isOwner(userId) || isAdmin() || (isGuardian() && resource.data.get('guardianEmail', '') == request.auth.token.email);
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId) || isAdmin();
-      allow delete: if isAdmin();
+    match /videoProcessingJobs/{jobId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.playerId == uid());
+      allow write: if false; // Cloud Functions only
     }
 
-    // ─── Opportunities ───────────────────────────────────────────────────
-    match /opportunities/{oppId} {
-      allow read: if isAuthenticated();
-      allow create: if isClub() && request.resource.data.clubId == request.auth.uid;
-      allow update: if isClub() && resource.data.clubId == request.auth.uid;
-      allow delete: if (isClub() && resource.data.clubId == request.auth.uid) || isAdmin();
+    // ── Opportunities ───────────────────────────────────────────────────────
+    match /opportunities/{opportunityId} {
+      allow read: if signedIn();
+      allow create: if isClub() && request.resource.data.clubId == uid()
+        && adultVerificationLive();
+      allow update: if (isClub() && resource.data.clubId == uid()) || isAdmin();
+      allow delete: if (isClub() && resource.data.clubId == uid()) || isAdmin();
     }
 
-    // ─── Applications ────────────────────────────────────────────────────
-    match /applications/{appId} {
-      allow read: if isAuthenticated() && (
-                    resource.data.playerId == request.auth.uid ||
-                    resource.data.clubId == request.auth.uid ||
-                    isAdmin()
-                  );
-      allow create: if (isPlayer() && request.resource.data.playerId == request.auth.uid) || 
-                       (isClub() && request.resource.data.clubId == request.auth.uid);
-      allow update: if (isClub() && resource.data.clubId == request.auth.uid) ||
-                   (isPlayer() && resource.data.playerId == request.auth.uid) ||
-                   isAdmin();
-      allow delete: if isAdmin();
+    // ── Applications ────────────────────────────────────────────────────────
+    match /applications/{applicationId} {
+      allow read: if signedIn() && (
+        resource.data.playerId == uid()
+        || resource.data.clubId == uid()
+        || isAdmin()
+      );
+      allow create: if isPlayer()
+        && request.resource.data.playerId == uid()
+        && request.resource.data.status == 'submitted';
+      allow update: if (isClub() && resource.data.clubId == uid()
+          && !request.resource.data.diff(resource.data).affectedKeys()
+               .hasAny(['playerId', 'clubId', 'opportunityId']))
+        || (isPlayer() && resource.data.playerId == uid()
+          && request.resource.data.status == 'withdrawn')
+        || isAdmin();
+      allow delete: if isSuperAdmin();
     }
 
-    // ─── Shortlists ──────────────────────────────────────────────────────
+    // ── Shortlists (club-private) ───────────────────────────────────────────
     match /shortlists/{shortlistId} {
-      allow read: if isAuthenticated() && (resource.data.clubId == request.auth.uid || resource.data.playerId == request.auth.uid) || isAdmin();
-      allow create: if isAuthenticated() && (request.resource.data.clubId == request.auth.uid || request.resource.data.playerId == request.auth.uid);
-      allow update: if (resource.data.clubId == request.auth.uid || resource.data.playerId == request.auth.uid) || isAdmin();
-      allow delete: if (resource.data.clubId == request.auth.uid || resource.data.playerId == request.auth.uid) || isAdmin();
+      allow read: if (isClub() && resource.data.clubId == uid()) || isAdmin();
+      allow create: if isClub() && request.resource.data.clubId == uid();
+      allow update, delete: if (isClub() && resource.data.clubId == uid()) || isAdmin();
     }
 
-    // ─── Trials ──────────────────────────────────────────────────────────
+    match /shortlistItems/{itemId} {
+      allow read: if (isClub() && resource.data.clubId == uid()) || isAdmin();
+      allow create: if isClub() && request.resource.data.clubId == uid();
+      allow update, delete: if (isClub() && resource.data.clubId == uid()) || isAdmin();
+    }
+
+    // ── Trials ──────────────────────────────────────────────────────────────
     match /trials/{trialId} {
-      allow read: if isAuthenticated() && (
-                    resource.data.get('clubId', '') == request.auth.uid ||
-                    resource.data.get('playerId', '') == request.auth.uid ||
-                    isAdmin()
-                  );
-      allow create: if isClub() && request.resource.data.clubId == request.auth.uid;
-      allow update: if (isClub() && resource.data.clubId == request.auth.uid) || isAdmin();
-      allow delete: if (isClub() && resource.data.clubId == request.auth.uid) || isAdmin();
+      allow read: if signedIn() && (
+        resource.data.clubId == uid()
+        || resource.data.playerId == uid()
+        || resource.data.published == true
+        || isAdmin()
+      );
+      allow create: if isClub() && request.resource.data.clubId == uid();
+      allow update: if (isClub() && resource.data.clubId == uid()) || isAdmin();
+      allow delete: if (isClub() && resource.data.clubId == uid()) || isAdmin();
     }
 
-    // ─── Notifications ───────────────────────────────────────────────────
-    match /notifications/{notifId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if isAdmin() || isAuthenticated();
-      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid &&
-                    request.resource.data.diff(resource.data).affectedKeys().hasAll(['read']);
-      allow delete: if isAdmin();
+    // ── Squad ───────────────────────────────────────────────────────────────
+    match /squadMembers/{memberId} {
+      allow read: if (isClub() && resource.data.clubId == uid()) || isAdmin();
+      allow create: if isClub() && request.resource.data.clubId == uid();
+      allow update, delete: if (isClub() && resource.data.clubId == uid()) || isAdmin();
     }
 
-    // ─── Messages ─────────────────────────────────────────────────────────
-    match /messages/{messageId} {
-      allow read: if isAuthenticated() && (
-                    resource.data.senderId == request.auth.uid ||
-                    resource.data.receiverId == request.auth.uid ||
-                    resource.data.get('clubId', '') == request.auth.uid ||
-                    isAdmin()
-                  );
-      allow create: if isAuthenticated();
-      allow update, delete: if isAdmin();
+    match /squadRequirements/{requirementId} {
+      allow read: if (isClub() && resource.data.clubId == uid()) || isAdmin();
+      allow create: if isClub() && request.resource.data.clubId == uid();
+      allow update, delete: if isClub() && resource.data.clubId == uid() || isAdmin();
     }
 
-    // ─── Audit Logs (Immutable to normal users) ──────────────────────────
-    match /auditLogs/{logId} {
-      allow read: if isAdmin();
-      allow write: if false; // Only via Cloud Functions / Admin SDK
+    // ── Match results (server-computed, read-only to clients) ───────────────
+    match /matchResults/{resultId} {
+      allow read: if signedIn() && (
+        resource.data.clubId == uid()
+        || resource.data.playerId == uid()
+        || isAdmin()
+      );
+      allow write: if false;
     }
 
-    // ─── Consent Audit Trail ─────────────────────────────────────────────
-    match /consentAudit/{logId} {
-      allow read: if isAdmin() || (isGuardian() && resource.data.guardianId == request.auth.uid);
-      allow create: if isAuthenticated(); // Allow recording consent change
-      allow update, delete: if false; // Immutable
+    match /playerScores/{scoreId} {
+      allow read: if isOwner(scoreId) || isAdmin();
+      allow write: if false;
     }
 
-    // ─── Moderation Reports ───────────────────────────────────────────────
-    match /moderationReports/{reportId} {
-      allow read: if isAdmin();
-      allow create: if isAuthenticated();
-      allow update, delete: if isAdmin();
-    }
-
-    // ─── GDPR Requests ────────────────────────────────────────────────────
-    match /gdprRequests/{reqId} {
-      allow read: if isOwner(resource.data.userId) || isAdmin();
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isAdmin();
-    }
-
-    // ─── System Configuration & Versions ──────────────────────────────────
-    match /systemConfig/{configId} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+    // ── Matching configuration ──────────────────────────────────────────────
+    match /matchingConfigs/{configId} {
+      allow read: if signedIn();
+      allow write: if isSuperAdmin();
     }
 
     match /matchingConfigVersions/{versionId} {
-      allow read, write: if isAdmin();
+      allow read: if isAdmin();
+      allow write: if false; // written by Cloud Functions
     }
 
-    // ─── Club Verification Requests ──────────────────────────────────────
-    match /clubVerificationRequests/{reqId} {
-      allow read: if isOwner(reqId) || isAdmin();
-      allow create: if isClub() && request.resource.data.clubId == request.auth.uid;
-      allow update: if isAdmin();
+    // ── Consent audit (append-only, immutable) ──────────────────────────────
+    match /consentAudits/{auditId} {
+      allow read: if isSafeguardingAdmin()
+        || (isGuardian() && resource.data.guardianId == uid())
+        || (signedIn() && resource.data.youthId == uid());
+      allow create: if false; // Cloud Functions only
+      allow update, delete: if false;
+    }
+
+    // ── Notifications ───────────────────────────────────────────────────────
+    match /notifications/{notificationId} {
+      allow read: if signedIn() && resource.data.userId == uid();
+      allow create: if false; // Cloud Functions only
+      allow update: if signedIn()
+        && resource.data.userId == uid()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']);
+      allow delete: if signedIn() && resource.data.userId == uid();
+    }
+
+    // ── Messaging ───────────────────────────────────────────────────────────
+    match /conversations/{conversationId} {
+      allow read: if signedIn() && uid() in resource.data.participantIds;
+      allow create: if signedIn()
+        && uid() in request.resource.data.participantIds
+        && request.resource.data.isYouthConversation != true;
+      allow update: if signedIn() && uid() in resource.data.participantIds;
       allow delete: if isAdmin();
     }
 
-    // ─── Match Results (pre-computed scores) ─────────────────────────────
-    match /matchResults/{resultId} {
-      allow read: if isAuthenticated() && (
-                    resource.data.playerId == request.auth.uid ||
-                    resource.data.clubId == request.auth.uid ||
-                    isAdmin()
-                  );
-      allow write: if false; // Only written by Cloud Functions
+    match /conversations/{conversationId}/messages/{messageId} {
+      allow read: if signedIn()
+        && uid() in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds;
+      allow create: if signedIn()
+        && request.resource.data.senderId == uid()
+        && uid() in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantIds
+        && get(/databases/$(database)/documents/conversations/$(conversationId)).data.isYouthConversation != true;
+      allow update, delete: if false;
+    }
+
+    // ── Subscriptions & payments (server-authoritative) ─────────────────────
+    match /subscriptions/{subscriptionId} {
+      allow read: if isOwner(subscriptionId) || isFinanceAdmin();
+      allow write: if false;
+    }
+
+    match /payments/{paymentId} {
+      allow read: if (signedIn() && resource.data.userId == uid()) || isFinanceAdmin();
+      allow write: if false;
+    }
+
+    match /boosts/{boostId} {
+      allow read: if isOwner(boostId) || isFinanceAdmin();
+      allow write: if false;
+    }
+
+    match /stripeEvents/{eventId} {
+      allow read, write: if false; // webhook only
+    }
+
+    match /processedStripeEvents/{eventId} {
+      allow read: if isFinanceAdmin();
+      allow write: if false;
+    }
+
+    // ── AI (advisory only) ──────────────────────────────────────────────────
+    match /aiJobs/{jobId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.requestedBy == uid());
+      allow write: if false;
+    }
+
+    match /aiResults/{resultId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.ownerId == uid());
+      allow write: if false;
+    }
+
+    match /aiUsage/{usageId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ── Moderation ──────────────────────────────────────────────────────────
+    match /moderationReports/{reportId} {
+      allow read: if isModerator() || (signedIn() && resource.data.reporterId == uid());
+      allow create: if signedIn()
+        && request.resource.data.reporterId == uid()
+        && request.resource.data.status == 'pending';
+      allow update, delete: if isModerator();
+    }
+
+    // ── Audit logs (append-only) ────────────────────────────────────────────
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
+
+    // ── GDPR requests ───────────────────────────────────────────────────────
+    match /gdprRequests/{requestId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow create: if signedIn()
+        && request.resource.data.userId == uid()
+        && request.resource.data.status == 'pending';
+      allow update, delete: if isAdmin();
+    }
+
+    // ── System settings ─────────────────────────────────────────────────────
+    match /systemSettings/{settingId} {
+      allow read: if signedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    match /systemConfig/{configId} {
+      allow read: if signedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    // ── Club invites ────────────────────────────────────────────────────────
+    match /clubInvites/{inviteId} {
+      allow read: if isClub() && resource.data.clubId == uid() || isAdmin();
+      allow create: if isClub() && request.resource.data.clubId == uid();
+      allow update: if (isClub() && resource.data.clubId == uid()) || isAdmin();
+      allow delete: if (isClub() && resource.data.clubId == uid()) || isAdmin();
+    }
+
+    // ── Analytics events (write-only from client, read by admin) ────────────
+    match /analyticsEvents/{eventId} {
+      allow read: if isAdmin();
+      allow create: if signedIn() && request.resource.data.userId == uid();
+      allow update, delete: if false;
     }
   }
 }

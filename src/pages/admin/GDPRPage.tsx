@@ -1,184 +1,229 @@
-import { useState, useEffect } from 'react';
-import { useToast } from '../../lib/toast';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+import { collection, doc, getDocs, limit, query, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { ShieldCheck, RefreshCw, Search, Download, Trash2, Clock, CheckCircle2 } from 'lucide-react';
 import { db } from '../../lib/firebase';
-import { collection, getDocs, doc, updateDoc, serverTimestamp, query, limit } from 'firebase/firestore';
+import { useToast } from '../../lib/toast';
 import type { GDPRRequestRecord } from '../../app/types';
-import { ShieldCheck, Loader2, RefreshCw } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { TableSkeleton } from '../../components/ui/Skeleton';
+
+const STATUS_TONE = {
+  pending: 'amber',
+  processing: 'sky',
+  completed: 'emerald',
+  rejected: 'rose',
+} as const;
+
+function formatDate(seconds?: number): string {
+  if (!seconds) return '—';
+  return new Date(seconds * 1000).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
 
 export const GDPRPage = () => {
   const { success, error: toastError } = useToast();
 
   const [requests, setRequests] = useState<GDPRRequestRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
-  useEffect(() => {
-    loadRequests();
-  }, []);
-
-  const loadRequests = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const snap = await getDocs(query(collection(db, 'gdprRequests'), limit(50)));
-      let list = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<GDPRRequestRecord, 'id'>),
+      const snapshot = await getDocs(query(collection(db, 'gdprRequests'), limit(100)));
+      const rows = snapshot.docs.map((entry) => ({
+        id: entry.id,
+        ...(entry.data() as Omit<GDPRRequestRecord, 'id'>),
       }));
-
-      if (list.length === 0) {
-        list = [
-          {
-            id: 'gdpr-seed-1',
-            userId: 'usr_player_401',
-            userEmail: 'player401@example.com',
-            type: 'export',
-            status: 'pending',
-          },
-          {
-            id: 'gdpr-seed-2',
-            userId: 'usr_retired_88',
-            userEmail: 'retired88@example.com',
-            type: 'delete',
-            status: 'pending',
-          },
-        ];
-      }
-
-      setRequests(list);
+      rows.sort((a, b) => {
+        const aTime = (a as { createdAt?: { seconds: number } }).createdAt?.seconds ?? 0;
+        const bTime = (b as { createdAt?: { seconds: number } }).createdAt?.seconds ?? 0;
+        return bTime - aTime;
+      });
+      setRequests(rows);
     } catch (err) {
       console.error(err);
+      setError('We could not load GDPR requests. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const handleProcess = async (id: string, status: 'completed' | 'rejected') => {
-    setProcessingId(id);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const setStatus = async (requestId: string, status: GDPRRequestRecord['status']) => {
+    setProcessingId(requestId);
     try {
-      if (!id.startsWith('gdpr-seed-')) {
-        await updateDoc(doc(db, 'gdprRequests', id), {
-          status,
-          processedAt: serverTimestamp(),
-        });
-      }
-      setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, status } : r)));
-      success(`GDPR request marked as ${status}.`);
-    } catch {
-      toastError('Could not update request.');
+      await updateDoc(doc(db, 'gdprRequests', requestId), {
+        status,
+        processedAt: status === 'completed' ? serverTimestamp() : null,
+        updatedAt: serverTimestamp(),
+      });
+      success(`Request marked ${status}.`);
+      await load();
+    } catch (err) {
+      console.error(err);
+      toastError('Could not update this request.');
     } finally {
       setProcessingId(null);
     }
   };
 
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return requests;
+    return requests.filter(
+      (row) =>
+        (row.userEmail ?? '').toLowerCase().includes(term) ||
+        (row.userId ?? '').toLowerCase().includes(term) ||
+        (row.type ?? '').toLowerCase().includes(term),
+    );
+  }, [requests, search]);
+
   if (loading) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-brand animate-spin" />
+      <div className="space-y-6">
+        <PageHeader eyebrow="Compliance" title="GDPR requests" />
+        <TableSkeleton rows={6} cols={5} />
       </div>
     );
   }
 
+  if (error) return <ErrorState description={error} onRetry={load} />;
+
+  const pending = requests.filter((r) => r.status === 'pending' || r.status === 'processing');
+
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-12">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Compliance"
+        title="GDPR requests"
+        description="Data export and erasure requests. Consent audit records are retained under statutory obligation."
+        actions={
+          <Button variant="secondary" size="sm" onClick={load} iconLeft={<RefreshCw className="h-3.5 w-3.5" />}>
+            Refresh
+          </Button>
+        }
+      />
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card padding="sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Open requests</p>
+          <p className="gw-numeric mt-2 text-[24px] font-bold text-amber-300">{pending.length}</p>
+        </Card>
+        <Card padding="sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Completed</p>
+          <p className="gw-numeric mt-2 text-[24px] font-bold text-emerald-300">
+            {requests.filter((r) => r.status === 'completed').length}
+          </p>
+        </Card>
+        <Card padding="sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Total</p>
+          <p className="gw-numeric mt-2 text-[24px] font-bold text-white">{requests.length}</p>
+        </Card>
+      </div>
+
+      <div className="flex items-start gap-3 rounded-2xl border border-sky-400/25 bg-sky-400/[0.06] p-4">
+        <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-sky-400" />
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-brand font-bold text-xs uppercase tracking-widest">Privacy & Governance</span>
-          </div>
-          <h1 className="text-3xl font-black uppercase text-white tracking-tight">GDPR & Statutory Data Requests</h1>
-          <p className="text-sm text-slate-400">
-            Process personal data exports and Right to be Forgotten requests with child protection retention rules.
-          </p>
-        </div>
-
-        <button
-          onClick={loadRequests}
-          className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span>Refresh</span>
-        </button>
-      </div>
-
-      <div className="bg-brand/10 border border-brand/30 rounded-3xl p-6 flex items-start gap-4">
-        <ShieldCheck className="w-6 h-6 text-brand shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <h2 className="text-sm font-bold text-white">Statutory Child Protection Exemption (Section 45)</h2>
-          <p className="text-xs text-slate-300 leading-relaxed">
-            When processing account deletions, discoverable personal profiles and videos are immediately purged, but immutable guardian consent audit logs are legally retained under UK Working Together to Safeguard Children guidelines.
+          <p className="text-[13px] font-semibold text-sky-100">Retention policy</p>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-sky-200/80">
+            Erasure removes discoverable personal data. Consent audit records and financial transaction records are
+            retained for the statutory period and are never deleted by this workflow.
           </p>
         </div>
       </div>
 
-      <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-6">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="text-[11px] uppercase bg-white/5 text-slate-400 border-b border-white/10">
-              <tr>
-                <th className="px-4 py-3">User Identifier</th>
-                <th className="px-4 py-3">Email Address</th>
-                <th className="px-4 py-3">Request Type</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Compliance Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {requests.map((r) => (
-                <tr key={r.id} className="hover:bg-white/5 transition-colors">
-                  <td className="px-4 py-3 font-mono font-bold text-white">{r.userId}</td>
-                  <td className="px-4 py-3 font-mono text-slate-300">{r.userEmail}</td>
-                  <td className="px-4 py-3 uppercase font-mono font-bold">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] ${
-                        r.type === 'delete'
-                          ? 'text-red-400 bg-red-400/10 border border-red-400/30'
-                          : 'text-blue-400 bg-blue-400/10 border border-blue-400/30'
-                      }`}
+      <Card padding="sm">
+        <Input
+          placeholder="Search by email, user ID or request type"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          iconLeft={<Search className="h-4 w-4" />}
+          aria-label="Search GDPR requests"
+        />
+      </Card>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          icon={<ShieldCheck className="h-6 w-6" />}
+          title="No GDPR requests"
+          description={
+            search
+              ? 'No request matches that search.'
+              : 'Export and deletion requests submitted by users will appear here.'
+          }
+        />
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((row) => (
+            <Card key={row.id} padding="md">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={row.type === 'delete' ? 'rose' : 'sky'} icon={row.type === 'delete' ? <Trash2 className="h-3 w-3" /> : <Download className="h-3 w-3" />}>
+                      {row.type}
+                    </Badge>
+                    <Badge tone={STATUS_TONE[row.status] ?? 'slate'} dot>
+                      {row.status}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-[13px] font-medium text-white">{row.userEmail ?? row.userId ?? '—'}</p>
+                  <p className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500">
+                    <Clock className="h-3 w-3" />
+                    Requested {(row as { createdAt?: { seconds: number } }).createdAt?.seconds
+                      ? formatDate((row as { createdAt?: { seconds: number } }).createdAt?.seconds)
+                      : '—'}
+                    {row.processedAt?.seconds ? ` · processed ${formatDate(row.processedAt.seconds)}` : ''}
+                  </p>
+                </div>
+
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  {row.status === 'pending' ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setStatus(row.id, 'processing')}
+                      loading={processingId === row.id}
                     >
-                      {r.type}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 capitalize">
-                    <span
-                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                        r.status === 'completed'
-                          ? 'text-emerald-400 bg-emerald-400/10 border border-emerald-400/30'
-                          : r.status === 'rejected'
-                          ? 'text-slate-400 bg-white/5 border border-white/10'
-                          : 'text-amber-400 bg-amber-400/10 border border-amber-400/30'
-                      }`}
-                    >
-                      {r.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    {r.status === 'pending' ? (
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => handleProcess(r.id, 'completed')}
-                          disabled={processingId === r.id}
-                          className="px-2.5 py-1 rounded bg-brand/10 hover:bg-brand/20 border border-brand/30 text-brand font-bold text-[11px] transition-all"
-                        >
-                          Mark Processed
-                        </button>
-                        <button
-                          onClick={() => handleProcess(r.id, 'rejected')}
-                          disabled={processingId === r.id}
-                          className="px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-slate-400 text-[11px] transition-all"
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-slate-500 text-[11px]">Completed</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      Start processing
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    onClick={() => setStatus(row.id, 'completed')}
+                    disabled={processingId === row.id || row.status === 'completed'}
+                    iconLeft={<CheckCircle2 className="h-3.5 w-3.5" />}
+                  >
+                    Complete
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setStatus(row.id, 'rejected')}
+                    disabled={processingId === row.id || row.status === 'rejected'}
+                  >
+                    Reject
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ))}
         </div>
-      </div>
+      )}
     </div>
   );
 };

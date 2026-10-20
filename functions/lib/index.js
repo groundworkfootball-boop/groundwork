@@ -17,9 +17,12 @@ export { updateClubProfile, submitVerification, reviewVerification, suspendClub,
 // Payments (Stripe)
 export { createCheckoutSession, createBillingPortalSession } from './payments/checkout.js';
 export { stripeWebhook } from './payments/webhook.js';
+export { adminReviewClubVerification } from './clubs/adminVerification.js';
+export { adminSetPlayerVisibility } from './admin/playerVisibility.js';
 // AI (advisory-only)
 export { analyzeSquadGaps } from './ai/squadGap.js';
 export { getAIRecommendations } from './ai/recommendations.js';
+export { getPlayerRecommendations } from './ai/playerRecommendations.js';
 export { tagVideoContent } from './ai/videoTagging.js';
 export { getAIUsageStats, testAIConnection, clearAICache } from './ai/admin.js';
 // Notifications & safety triggers

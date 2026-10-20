@@ -1,157 +1,208 @@
-import { useState, useEffect } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+import { httpsCallable } from 'firebase/functions';
+import { collection, getDocs } from 'firebase/firestore';
+import { Users, Eye, EyeOff, RefreshCw, Search, ShieldCheck } from 'lucide-react';
+import { db, functions } from '../../lib/firebase';
 import { useToast } from '../../lib/toast';
-import { db } from '../../lib/firebase';
-import { collection, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import type { PlayerRecord } from '../../app/types';
-import { Users, Eye, EyeOff, Loader2, RefreshCw } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { TableSkeleton } from '../../components/ui/Skeleton';
 
 export const PlayersPage = () => {
   const { success, error: toastError } = useToast();
 
   const [players, setPlayers] = useState<PlayerRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
-  useEffect(() => {
-    loadPlayers();
-  }, []);
-
-  const loadPlayers = async () => {
+  const loadPlayers = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const snap = await getDocs(collection(db, 'players'));
-      setPlayers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<PlayerRecord, 'id'>) })));
+      const snapshot = await getDocs(collection(db, 'players'));
+      setPlayers(
+        snapshot.docs.map((entry) => ({ id: entry.id, ...(entry.data() as Omit<PlayerRecord, 'id'>) })),
+      );
     } catch (err) {
       console.error(err);
+      setError('We could not load players. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const handleToggleSearchable = async (playerId: string, current: boolean) => {
-    setActionId(playerId);
+  useEffect(() => {
+    void loadPlayers();
+  }, [loadPlayers]);
+
+  const toggleVisibility = async (player: PlayerRecord) => {
+    setActionId(player.id);
     try {
-      await updateDoc(doc(db, 'players', playerId), {
-        searchable: !current,
-        updatedAt: serverTimestamp(),
-      });
-      setPlayers((prev) =>
-        prev.map((p) => (p.id === playerId ? { ...p, searchable: !current } : p))
-      );
-      success(`Searchable status updated.`);
-    } catch {
-      toastError('Could not update player visibility.');
+      const callable = httpsCallable<
+        { playerId: string; searchable: boolean },
+        { ok: boolean; searchable: boolean }
+      >(functions, 'adminSetPlayerVisibility');
+
+      await callable({ playerId: player.id, searchable: !player.searchable });
+      success(player.searchable ? 'Player hidden from search.' : 'Player made searchable.');
+      await loadPlayers();
+    } catch (err) {
+      console.error(err);
+      const message =
+        (err as { message?: string })?.message?.replace(/^Firebase: /, '') ??
+        'Could not update player visibility.';
+      toastError(message);
     } finally {
       setActionId(null);
     }
   };
 
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return players;
+    return players.filter(
+      (player) =>
+        (player.name ?? '').toLowerCase().includes(term) ||
+        (player.email ?? '').toLowerCase().includes(term) ||
+        (player.region ?? '').toLowerCase().includes(term),
+    );
+  }, [players, search]);
+
   if (loading) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-brand animate-spin" />
+      <div className="space-y-6">
+        <PageHeader eyebrow="Administration" title="Players" />
+        <TableSkeleton rows={8} cols={5} />
       </div>
     );
   }
 
+  if (error) return <ErrorState description={error} onRetry={loadPlayers} />;
+
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-12">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-brand font-bold text-xs uppercase tracking-widest">Platform Directory</span>
-          </div>
-          <h1 className="text-3xl font-black uppercase text-white tracking-tight">Player Roster & Oversight</h1>
-          <p className="text-sm text-slate-400">
-            Inspect all registered adult and youth talent, guardian links, and search visibility states.
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Administration"
+        title="Players"
+        description="Visibility is server-owned. Youth profiles can never be made searchable without granted consent."
+        actions={
+          <Button variant="secondary" size="sm" onClick={loadPlayers} iconLeft={<RefreshCw className="h-3.5 w-3.5" />}>
+            Refresh
+          </Button>
+        }
+      />
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card padding="sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Total players</p>
+          <p className="gw-numeric mt-2 text-[24px] font-bold text-white">{players.length}</p>
+        </Card>
+        <Card padding="sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Youth profiles</p>
+          <p className="gw-numeric mt-2 text-[24px] font-bold text-amber-300">
+            {players.filter((p) => p.isYouth).length}
           </p>
-        </div>
-        <button
-          onClick={loadPlayers}
-          className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span>Refresh</span>
-        </button>
+        </Card>
+        <Card padding="sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Searchable</p>
+          <p className="gw-numeric mt-2 text-[24px] font-bold text-emerald-300">
+            {players.filter((p) => p.searchable).length}
+          </p>
+        </Card>
       </div>
 
-      <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-6">
-        {players.length === 0 ? (
-          <div className="py-12 text-center text-slate-400">
-            <Users className="w-10 h-10 mx-auto text-slate-600 mb-3" />
-            <p className="text-sm">No player records found.</p>
-          </div>
-        ) : (
+      <Card padding="sm">
+        <Input
+          placeholder="Search by name, email or region"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          iconLeft={<Search className="h-4 w-4" />}
+          aria-label="Search players"
+        />
+      </Card>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          icon={<Users className="h-6 w-6" />}
+          title="No players found"
+          description={search ? 'No player matches that search.' : 'Registered players will appear here.'}
+        />
+      ) : (
+        <Card padding="none" className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="text-[11px] uppercase bg-white/5 text-slate-400 border-b border-white/10">
-                <tr>
-                  <th className="px-4 py-3">Player Name</th>
-                  <th className="px-4 py-3">Category</th>
-                  <th className="px-4 py-3">Position</th>
-                  <th className="px-4 py-3">Region</th>
-                  <th className="px-4 py-3">Tier</th>
-                  <th className="px-4 py-3">Consent Status</th>
-                  <th className="px-4 py-3">Searchable</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-white/[0.08] bg-white/[0.03]">
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Player</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Region</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Type</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Consent</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Visible</th>
+                  <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
-                {players.map((p) => (
-                  <tr key={p.id} className="hover:bg-white/5 transition-colors">
-                    <td className="px-4 py-3 font-bold text-white">{p.name || p.displayName || 'Player'}</td>
+              <tbody>
+                {filtered.map((player) => (
+                  <tr key={player.id} className="border-b border-white/[0.05] last:border-0">
                     <td className="px-4 py-3">
-                      {p.isYouth ? (
-                        <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-400 font-bold text-[10px]">
-                          Youth Minor
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full bg-white/5 text-slate-400 text-[10px]">
-                          Adult
-                        </span>
-                      )}
+                      <p className="text-[12.5px] font-medium text-white">{player.name ?? '—'}</p>
+                      <p className="text-[11px] text-slate-500">{player.email ?? ''}</p>
                     </td>
-                    <td className="px-4 py-3 font-mono font-bold text-brand">{p.positions?.join(', ') || 'CM'}</td>
-                    <td className="px-4 py-3">{p.region || '—'}</td>
-                    <td className="px-4 py-3">Tier {p.playingLevel || 5}</td>
-                    <td className="px-4 py-3 capitalize">
-                      {p.isYouth ? (
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            p.consentStatus === 'granted'
-                              ? 'text-emerald-400 bg-emerald-400/10 border border-emerald-400/30'
-                              : 'text-amber-400 bg-amber-400/10 border border-amber-400/30'
-                          }`}
-                        >
-                          {p.consentStatus || 'pending'}
-                        </span>
+                    <td className="px-4 py-3 text-[12px] text-slate-400">{player.region ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      {player.isYouth ? (
+                        <Badge tone="amber" icon={<ShieldCheck className="h-3 w-3" />}>Youth</Badge>
                       ) : (
-                        <span className="text-slate-500">N/A (Adult)</span>
+                        <Badge tone="slate">Adult</Badge>
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {p.searchable ? (
-                        <span className="text-emerald-400 flex items-center gap-1 font-semibold"><Eye className="w-3.5 h-3.5" /> Visible</span>
+                      <Badge
+                        tone={
+                          player.consentStatus === 'granted'
+                            ? 'emerald'
+                            : player.consentStatus === 'withdrawn'
+                              ? 'rose'
+                              : player.isYouth
+                                ? 'amber'
+                                : 'slate'
+                        }
+                      >
+                        {player.consentStatus ?? 'n/a'}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      {player.searchable ? (
+                        <Eye className="h-4 w-4 text-emerald-400" />
                       ) : (
-                        <span className="text-slate-500 flex items-center gap-1"><EyeOff className="w-3.5 h-3.5" /> Delisted</span>
+                        <EyeOff className="h-4 w-4 text-slate-600" />
                       )}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => handleToggleSearchable(p.id, !!p.searchable)}
-                        disabled={actionId === p.id}
-                        className="px-2.5 py-1 rounded bg-white/5 hover:bg-white/10 border border-white/10 text-white text-[11px] font-medium"
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => toggleVisibility(player)}
+                        loading={actionId === player.id}
+                        disabled={player.isYouth && player.consentStatus !== 'granted' && !player.searchable}
                       >
-                        Toggle Visibility
-                      </button>
+                        {player.searchable ? 'Hide' : 'Show'}
+                      </Button>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+        </Card>
+      )}
     </div>
   );
 };

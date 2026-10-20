@@ -1,4 +1,4 @@
-export type Role = 'player' | 'guardian' | 'club' | 'admin';
+﻿export type Role = 'player' | 'guardian' | 'club' | 'admin';
 
 export type VerificationStatus = 'pending' | 'under_review' | 'approved' | 'rejected' | 'expired' | 'suspended';
 
@@ -49,6 +49,7 @@ export interface PlayerRecord extends BaseRecord {
   trialAvailability?: string[];
   skillRatings?: Record<string, number>;
   physicalAttributes?: Record<string, number>;
+  mentalAttributes?: Record<string, number>;
   bio?: string;
   currentClub?: string;
   previousClubs?: string[];
@@ -65,6 +66,8 @@ export interface ClubRecord extends BaseRecord {
   uid: string;
   name?: string;
   clubCode?: string; // Unique club code, e.g. GW-ARS-4821
+  league?: string;
+  clubType?: string;
   region?: string;
   city?: string;
   stadiumLocation?: string;
@@ -140,6 +143,13 @@ export interface VideoRecord extends BaseRecord {
   aiTags?: string[];
   aiSummary?: string;
   acceptedTags?: string[];
+  storagePath?: string;
+  processedPath?: string;
+  thumbnailPath?: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  consentStatus?: ConsentStatus;
+  moderationStatus?: 'pending' | 'approved' | 'rejected';
 }
 
 export interface MatchResultRecord extends BaseRecord {
@@ -161,6 +171,17 @@ export interface MatchResultRecord extends BaseRecord {
   searchable?: boolean;
   configVersion?: number;
   scoredAt?: TimestampLike | null;
+  ttlExpiry?: TimestampLike | null;
+  clubName?: string;
+  playerName?: string;
+  playerSnapshot?: {
+    displayName?: string;
+    positions?: string[];
+    region?: string;
+    ageBand?: string;
+    playingLevel?: number;
+    profileCompleteness?: number;
+  };
 }
 
 export interface ConsentAuditRecord extends BaseRecord {
@@ -201,3 +222,8 @@ export interface MatchingConfigRecord {
   version: number;
   updatedAt?: TimestampLike | null;
 }
+
+
+
+
+

@@ -1,168 +1,104 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Search, SlidersHorizontal, Info, Loader2, AlertCircle, Target, Send, X, Loader } from 'lucide-react';
+﻿import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import {
+  Search,
+  Target,
+  MapPin,
+  ArrowRight,
+  Send,
+  Info,
+  Filter,
+  CheckCircle2,
+  Clock,
+  Building2,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../lib/toast';
-import { db } from '../lib/firebase';
-import { collection, query, where, getDocs, addDoc, serverTimestamp, getDoc, doc } from 'firebase/firestore';
-import { calculateMatchScore } from '../lib/services/matchingService';
-import type { ClubRecord, PlayerRecord } from '../app/types';
+import { useAsync } from '../lib/useAsync';
+import { listPlayerMatches } from '../lib/services/matchingService';
+import { listOpenOpportunities, submitApplication } from '../lib/services/playerService';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Card } from '../components/ui/Card';
+import { Badge } from '../components/ui/Badge';
+import { Button, ButtonLink } from '../components/ui/Button';
+import { Input, Select } from '../components/ui/Input';
+import { Modal } from '../components/ui/Modal';
+import { Progress } from '../components/ui/Progress';
+import { EmptyState, ErrorState } from '../components/ui/EmptyState';
+import { CardSkeleton } from '../components/ui/Skeleton';
 
-interface OpportunityDoc {
-  id: string;
-  clubId: string;
-  clubName?: string;
-  title: string;
-  position?: string;
-  region?: string;
-  description?: string;
-  type?: string;
-  status: string;
-  createdAt?: { seconds: number };
-}
+const BREAKDOWN_LABELS: Array<{ key: keyof NonNullable<MatchResultRecord['scoreBreakdown']>; label: string; weight: string }> = [
+  { key: 'positionMatch', label: 'Position compatibility', weight: '30%' },
+  { key: 'levelMatch', label: 'Playing level', weight: '20%' },
+  { key: 'attributesMatch', label: 'Attributes', weight: '20%' },
+  { key: 'distanceMatch', label: 'Distance / region', weight: '15%' },
+  { key: 'availabilityMatch', label: 'Availability overlap', weight: '10%' },
+  { key: 'boostMatch', label: 'Active boost', weight: '5%' },
+];
 
-interface PlayerProfileData {
-  positions?: string[];
-  region?: string;
-  playingLevel?: number;
-  availability?: string[];
-  trainingAvailability?: string[];
-  trialAvailability?: string[];
-  profileComplete?: number;
-  profileCompleteness?: number;
-  boostsActive?: boolean;
-  searchable?: boolean;
-  isYouth?: boolean;
-}
-
-interface ClubOppWithScore extends OpportunityDoc {
-  score: number;
-  breakdown: ReturnType<typeof calculateMatchScore>;
-}
+import type { MatchResultRecord } from '../app/types';
 
 export const Opportunities = () => {
-  const { user, role } = useAuth();
+  const { user } = useAuth();
   const { success, error: toastError } = useToast();
 
-  const [opportunities, setOpportunities] = useState<OpportunityDoc[]>([]);
-  const [playerProfile, setPlayerProfile] = useState<PlayerProfileData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  const matches = useAsync(() => listPlayerMatches(user!.uid, 50), [user?.uid], { enabled: Boolean(user?.uid) });
+  const opportunities = useAsync(() => listOpenOpportunities(50), []);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [positionFilter, setPositionFilter] = useState('');
   const [sortBy, setSortBy] = useState<'match' | 'newest'>('match');
-  const [showBreakdown, setShowBreakdown] = useState<string | null>(null);
+  const [breakdownFor, setBreakdownFor] = useState<MatchResultRecord | null>(null);
 
-  // Apply modal
-  const [applyingTo, setApplyingTo] = useState<OpportunityDoc | null>(null);
+  const [applyingTo, setApplyingTo] = useState<{ id: string; title: string; clubId: string } | null>(null);
   const [applyMessage, setApplyMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (!user?.uid) return;
-    const load = async () => {
-      setLoading(true);
-      setFetchError(null);
-      try {
-        // Load player profile for scoring
-        if (role === 'player') {
-          const playerSnap = await getDoc(doc(db, 'players', user.uid));
-          if (playerSnap.exists()) {
-            setPlayerProfile(playerSnap.data() as PlayerProfileData);
-          }
-        }
+  const loading = matches.loading || opportunities.loading;
+  const error = matches.error || opportunities.error;
 
-        // Load active opportunities
-        const oppsQuery = query(collection(db, 'opportunities'), where('status', '==', 'active'));
-        const oppsSnap = await getDocs(oppsQuery);
-        setOpportunities(oppsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as OpportunityDoc)));
-      } catch (err) {
-        console.error('Opportunities error:', err);
-        setFetchError('Failed to load opportunities. Please refresh.');
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, [user?.uid, role]);
+  const positions = useMemo(() => {
+    const set = new Set<string>();
+    (matches.data ?? []).forEach((m) => {
+      if (m.position) set.add(m.position);
+    });
+    return Array.from(set).sort();
+  }, [matches.data]);
 
-  const enginePlayer: PlayerRecord = useMemo(() => ({
-    id: user?.uid ?? 'player',
-    uid: user?.uid ?? 'player',
-    positions: playerProfile?.positions ?? [],
-    region: playerProfile?.region ?? '',
-    playingLevel: playerProfile?.playingLevel ?? 1,
-    availability: playerProfile?.availability ?? [],
-    trainingAvailability: playerProfile?.trainingAvailability ?? [],
-    trialAvailability: playerProfile?.trialAvailability ?? [],
-    profileComplete: playerProfile?.profileComplete ?? 0,
-    profileCompleteness: playerProfile?.profileComplete ?? playerProfile?.profileCompleteness ?? 0,
-    boostsActive: playerProfile?.boostsActive ?? false,
-    searchable: playerProfile?.searchable ?? false,
-    isYouth: playerProfile?.isYouth ?? false,
-  }), [playerProfile, user?.uid]);
-
-  const matchedOpportunities: ClubOppWithScore[] = useMemo(() => {
-    return opportunities
-      .filter((opp) => {
-        const term = searchTerm.toLowerCase();
-        return !term || opp.title.toLowerCase().includes(term) || opp.clubName?.toLowerCase().includes(term) || opp.position?.toLowerCase().includes(term);
-      })
-      .map((opp) => {
-        // Build minimal ClubPreferences for scoring
-        const clubRecord: ClubRecord = {
-          id: opp.id,
-          uid: opp.clubId,
-          name: opp.clubName,
-          region: opp.region ?? '',
-          targetPositions: opp.position ? [opp.position] : [],
-          targetPlayingLevels: [4],
-        };
-        const breakdown = calculateMatchScore(enginePlayer, clubRecord);
-        return { ...opp, score: breakdown.score, breakdown };
-      })
-      .sort((a, b) => {
-        if (sortBy === 'match') return b.score - a.score;
-        // newest: by createdAt
-        return (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0);
-      });
-  }, [opportunities, searchTerm, sortBy, enginePlayer]);
+  const filteredMatches = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    const list = (matches.data ?? []).filter((match) => {
+      if (positionFilter && match.position !== positionFilter) return false;
+      if (!term) return true;
+      return (
+        (match.clubName ?? '').toLowerCase().includes(term) ||
+        (match.region ?? '').toLowerCase().includes(term) ||
+        (match.position ?? '').toLowerCase().includes(term)
+      );
+    });
+    if (sortBy === 'match') {
+      return [...list].sort((a, b) => (b.matchScore ?? 0) - (a.matchScore ?? 0));
+    }
+    return [...list].sort((a, b) => (b.scoredAt?.seconds ?? 0) - (a.scoredAt?.seconds ?? 0));
+  }, [matches.data, searchTerm, positionFilter, sortBy]);
 
   const handleApply = async () => {
     if (!applyingTo || !user?.uid) return;
     setSubmitting(true);
     try {
-      // Check for duplicate application
-      const existingQ = query(
-        collection(db, 'applications'),
-        where('playerId', '==', user.uid),
-        where('opportunityId', '==', applyingTo.id),
-      );
-      const existingSnap = await getDocs(existingQ);
-      if (!existingSnap.empty) {
-        toastError('You have already applied to this opportunity.');
-        setApplyingTo(null);
-        return;
-      }
-
-      await addDoc(collection(db, 'applications'), {
+      await submitApplication({
         playerId: user.uid,
-        playerName: user.name,
         clubId: applyingTo.clubId,
-        clubName: applyingTo.clubName,
         opportunityId: applyingTo.id,
         opportunityTitle: applyingTo.title,
-        status: 'submitted',
-        message: applyMessage,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        message: applyMessage.trim(),
       });
-
-      success('Application submitted successfully!');
+      success('Application submitted. You will be notified of any status change.');
       setApplyingTo(null);
       setApplyMessage('');
     } catch (err) {
-      console.error('Apply error:', err);
-      toastError('Failed to submit application. Please try again.');
+      console.error(err);
+      toastError('We could not submit your application. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -170,258 +106,310 @@ export const Opportunities = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 text-brand animate-spin" />
+      <div className="space-y-6">
+        <PageHeader eyebrow="Opportunities" title="Your matched opportunities" />
+        <div className="grid gap-4 md:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <CardSkeleton key={i} rows={3} />
+          ))}
+        </div>
       </div>
     );
   }
 
+  if (error) return <ErrorState onRetry={() => { matches.reload(); opportunities.reload(); }} />;
+
   return (
-    <div className="w-full h-full flex flex-col pb-20">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-        <div className="flex items-center space-x-4">
-          <h2 className="text-3xl font-black uppercase tracking-tight">
-            {role === 'club' ? 'My Opportunities' : 'Active Opportunities'}
-          </h2>
-          <span className="px-3 py-1 bg-brand/10 border border-brand/30 text-[10px] text-brand font-bold uppercase tracking-widest rounded shadow-[0_0_10px_rgba(204,255,0,0.2)]">
-            {matchedOpportunities.length} {role === 'player' ? 'MATCHES' : 'TOTAL'}
-          </span>
-        </div>
-        <div className="relative w-full md:w-72">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search clubs, positions..."
-            className="w-full bg-dark-surface border border-dark-border rounded-lg px-9 py-2.5 text-sm focus:outline-none focus:border-brand transition-colors"
-          />
-        </div>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Opportunities"
+        title="Your matched opportunities"
+        description="Ranked by the deterministic engine using your dossier and each club's live requirements."
+        actions={
+          <ButtonLink to="/dashboard/player/profile-builder" variant="secondary" size="sm">
+            Improve dossier
+          </ButtonLink>
+        }
+      />
 
-      {fetchError && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 flex items-start space-x-3 mb-6">
-          <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-          <p className="text-red-400 text-sm">{fetchError}</p>
-        </div>
-      )}
-
-      <div className="flex flex-col lg:flex-row gap-8 w-full">
-        {/* Filters Sidebar */}
-        <div className="w-full lg:w-64 shrink-0 space-y-6">
-          <div className="bg-dark-surface border border-dark-border rounded-xl p-6 shadow-lg lg:sticky lg:top-6">
-            <div className="flex justify-between items-center mb-6 border-b border-dark-border pb-4">
-              <div className="flex items-center space-x-2">
-                <SlidersHorizontal className="w-4 h-4 text-text-secondary" />
-                <h3 className="font-bold tracking-wider uppercase text-sm">Sort Options</h3>
-              </div>
-              <button onClick={() => setSortBy('match')} className="text-[10px] text-brand font-bold uppercase tracking-widest hover:underline">
-                Reset
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {[
-                { value: 'match' as const, label: 'Best Match' },
-                { value: 'newest' as const, label: 'Newest First' },
-              ].map(({ value, label }) => (
-                <label key={value} className="flex items-center space-x-3 cursor-pointer group">
-                  <input type="radio" name="sort" checked={sortBy === value} onChange={() => setSortBy(value)} className="hidden" />
-                  <div className={`w-4 h-4 rounded-full border flex items-center justify-center transition-colors ${sortBy === value ? 'border-brand bg-brand/10' : 'border-dark-border group-hover:border-text-secondary'}`}>
-                    {sortBy === value && <div className="w-2 h-2 rounded-full bg-brand" />}
-                  </div>
-                  <span className={`text-sm font-bold uppercase tracking-wider ${sortBy === value ? 'text-white' : 'text-text-secondary'}`}>{label}</span>
-                </label>
+      {/* Filters */}
+      <Card padding="sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex-1">
+            <Input
+              placeholder="Search club, region or position"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              iconLeft={<Search className="h-4 w-4" />}
+              aria-label="Search matches"
+            />
+          </div>
+          <div className="sm:w-44">
+            <Select
+              value={positionFilter}
+              onChange={(e) => setPositionFilter(e.target.value)}
+              aria-label="Filter by position"
+            >
+              <option value="">All positions</option>
+              {positions.map((position) => (
+                <option key={position} value={position}>
+                  {position}
+                </option>
               ))}
-            </div>
-
-            {role === 'player' && (
-              <div className="mt-6 bg-dark-bg/50 border border-dark-border/50 rounded-lg p-4">
-                <div className="flex items-start space-x-2">
-                  <Info className="w-4 h-4 text-brand shrink-0 mt-0.5" />
-                  <p className="text-[10px] text-text-secondary leading-relaxed">
-                    Matches are scored deterministically: Position 30%, Level 20%, Attributes 20%, Region 15%, Availability 10%, Boost 5%.
-                  </p>
-                </div>
-              </div>
-            )}
+            </Select>
+          </div>
+          <div className="sm:w-44">
+            <Select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value as 'match' | 'newest')}
+              aria-label="Sort results"
+            >
+              <option value="match">Sort: match score</option>
+              <option value="newest">Sort: most recent</option>
+            </Select>
           </div>
         </div>
+      </Card>
 
-        {/* Opportunity List */}
-        <div className="flex-1 space-y-6">
-          {matchedOpportunities.length === 0 && (
-            <div className="bg-dark-surface border border-dark-border rounded-xl p-12 text-center shadow-lg">
-              <Target className="w-12 h-12 text-text-secondary/30 mx-auto mb-4" />
-              <h4 className="text-lg font-bold text-text-primary mb-2">No opportunities found</h4>
-              <p className="text-text-secondary text-sm">
-                {searchTerm ? 'No opportunities match your search.' : 'No active opportunities available yet.'}
-              </p>
-            </div>
-          )}
-
-          {matchedOpportunities.map((opp) => {
-            const scorePercentage = Math.round(opp.score * 100);
-            const isHighMatch = role === 'player' && scorePercentage >= 70;
-            const isShowingBreakdown = showBreakdown === opp.id;
-
+      {/* Match results */}
+      {filteredMatches.length === 0 ? (
+        <EmptyState
+          icon={<Target className="h-6 w-6" />}
+          title="No match results yet"
+          description="The engine scores you against every club requirement once your dossier has positions, level, region and availability."
+          action={
+            <ButtonLink to="/dashboard/player/profile-builder" size="sm">
+              Complete your dossier
+            </ButtonLink>
+          }
+        />
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {filteredMatches.map((match) => {
+            const pct = Math.round((match.matchScore ?? 0) * 100);
             return (
-              <div
-                key={opp.id}
-                className={`bg-dark-surface border transition-all duration-300 p-6 rounded-xl relative overflow-hidden group shadow-lg ${isHighMatch ? 'border-brand/50 hover:border-brand' : 'border-dark-border hover:border-text-secondary/50'}`}
-              >
-                {isHighMatch && (
-                  <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-brand shadow-[0_0_10px_rgba(204,255,0,0.5)]" />
-                )}
-
-                <div className="flex flex-col md:flex-row justify-between items-start gap-6">
-                  <div className="flex space-x-6 items-start w-full">
-                    {/* Score circle (only for players) */}
-                    {role === 'player' && (
-                      <div
-                        className="relative w-20 h-20 shrink-0 cursor-pointer group/score"
-                        onClick={() => setShowBreakdown(isShowingBreakdown ? null : opp.id)}
-                      >
-                        <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-                          <circle cx="50" cy="50" r="44" fill="none" stroke="#2a3441" strokeWidth="8" />
-                          <circle
-                            cx="50" cy="50" r="44" fill="none"
-                            stroke={isHighMatch ? '#ccff00' : '#f59e0b'}
-                            strokeWidth="8"
-                            strokeDasharray="276"
-                            strokeDashoffset={276 - (276 * scorePercentage) / 100}
-                            className={`transition-all duration-1000 ${isHighMatch ? 'drop-shadow-[0_0_8px_rgba(204,255,0,0.5)]' : ''}`}
-                          />
-                        </svg>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center bg-dark-surface/80 rounded-full opacity-0 group-hover/score:opacity-100 transition-opacity">
-                          <span className="text-[8px] font-bold text-white uppercase tracking-widest text-center px-1">View<br/>Stats</span>
-                        </div>
-                        <div className="absolute inset-0 flex flex-col items-center justify-center group-hover/score:opacity-0 transition-opacity">
-                          <span className={`text-xl font-black leading-none ${isHighMatch ? 'text-brand' : 'text-amber-500'}`}>{scorePercentage}</span>
-                          <span className="text-[8px] text-text-secondary font-bold uppercase tracking-widest mt-0.5">Match</span>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex-1">
-                      <div className="flex flex-wrap gap-2 mb-2">
-                        {opp.type && (
-                          <span className="px-2 py-0.5 bg-dark-bg border border-dark-border text-[10px] font-bold text-text-secondary uppercase tracking-widest rounded">
-                            {opp.type.replace('_', ' ')}
-                          </span>
-                        )}
-                        {opp.region && (
-                          <span className="px-2 py-0.5 bg-dark-bg border border-dark-border text-[10px] font-bold text-text-secondary uppercase tracking-widest rounded">
-                            {opp.region}
-                          </span>
-                        )}
-                      </div>
-                      <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight mb-1 text-white">{opp.title}</h3>
-                      {opp.clubName && (
-                        <p className="text-sm text-text-secondary mb-2">{opp.clubName}</p>
-                      )}
-                      {opp.position && (
-                        <p className="text-sm text-text-secondary">
-                          Seeking: <span className="text-brand font-bold bg-brand/10 px-2 py-0.5 rounded">{opp.position}</span>
+              <Card key={match.id} variant="interactive" padding="md">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/[0.10] bg-white/[0.04]">
+                        <Building2 className="h-4 w-4 text-slate-400" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-[14px] font-semibold text-white">
+                          {match.clubName ?? 'Club'}
                         </p>
-                      )}
-                      {opp.description && (
-                        <p className="text-sm text-text-secondary mt-2 line-clamp-2">{opp.description}</p>
-                      )}
+                        <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[11.5px] text-slate-500">
+                          {match.position ? <span>{match.position}</span> : null}
+                          {match.region ? (
+                            <span className="flex items-center gap-1">
+                              <MapPin className="h-3 w-3" />
+                              {match.region}
+                            </span>
+                          ) : null}
+                        </p>
+                      </div>
                     </div>
                   </div>
-
-                  {role === 'player' && (
-                    <div className="space-y-3 w-full md:w-48 shrink-0">
-                      <button
-                        onClick={() => setApplyingTo(opp)}
-                        className="w-full py-3 bg-brand text-dark-bg font-bold text-xs uppercase tracking-widest rounded hover:bg-brand-hover transition-transform active:scale-[0.98] shadow-[0_0_15px_rgba(204,255,0,0.2)]"
-                      >
-                        Apply Now
-                      </button>
-                    </div>
-                  )}
+                  <div className="shrink-0 text-right">
+                    <p className="gw-numeric text-[22px] font-bold leading-none text-brand">{pct}%</p>
+                    <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                      Match
+                    </p>
+                  </div>
                 </div>
 
-                {/* Score Breakdown */}
-                {isShowingBreakdown && role === 'player' && (
-                  <div className="mt-6 pt-6 border-t border-dark-border animate-in slide-in-from-top-2 duration-300">
-                    <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4 flex items-center">
-                      <SlidersHorizontal className="w-4 h-4 mr-2 text-brand" />
-                      Match Breakdown (Deterministic)
-                    </h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-                      {[
-                        { label: 'Position', value: opp.breakdown.positionScore },
-                        { label: 'Level', value: opp.breakdown.levelScore },
-                        { label: 'Attributes', value: opp.breakdown.attributeScore },
-                        { label: 'Region', value: opp.breakdown.distanceScore },
-                        { label: 'Availability', value: opp.breakdown.availabilityScore },
-                        { label: 'Boost', value: opp.breakdown.boostScore },
-                      ].map(({ label, value }) => (
-                        <div key={label} className="bg-dark-bg p-3 rounded border border-dark-border text-center">
-                          <p className="text-[10px] text-text-secondary font-bold uppercase mb-1">{label}</p>
-                          <p className="text-lg font-black text-white">{Math.round(value * 100)}%</p>
-                        </div>
-                      ))}
-                    </div>
+                <div className="mt-4">
+                  <Progress value={pct} size="sm" tone={pct >= 80 ? 'emerald' : pct >= 60 ? 'brand' : 'amber'} />
+                </div>
+
+                <div className="mt-4 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBreakdownFor(match)}
+                    className="inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-400 transition-colors hover:text-white"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                    Score breakdown
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to={`/dashboard/club/player/${match.playerId}`}
+                      className="hidden rounded-lg border border-white/[0.10] px-2.5 py-1.5 text-[11.5px] font-medium text-slate-300 transition-colors hover:bg-white/[0.06] sm:block"
+                    >
+                      View club
+                    </Link>
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        setApplyingTo({
+                          id: match.id,
+                          title: match.clubName ?? 'Club opportunity',
+                          clubId: match.clubId,
+                        })
+                      }
+                      iconLeft={<Send className="h-3.5 w-3.5" />}
+                    >
+                      Apply
+                    </Button>
                   </div>
-                )}
-              </div>
+                </div>
+              </Card>
             );
           })}
         </div>
+      )}
+
+      {/* Open opportunities */}
+      <div>
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-[15px] font-semibold text-white">Open opportunities</h2>
+          <Badge tone="slate">{opportunities.data?.length ?? 0} live</Badge>
+        </div>
+        {(opportunities.data ?? []).length === 0 ? (
+          <EmptyState
+            compact
+            icon={<Filter className="h-6 w-6" />}
+            title="No open opportunities"
+            description="Clubs publish trials and recruitment requests here. Check back soon."
+          />
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {(opportunities.data ?? []).slice(0, 9).map((opportunity) => (
+              <Card key={opportunity.id} padding="sm" variant="interactive">
+                <p className="text-[13px] font-semibold text-white">{opportunity.title}</p>
+                <p className="mt-1 flex flex-wrap items-center gap-2 text-[11.5px] text-slate-500">
+                  {opportunity.clubName ? <span>{opportunity.clubName}</span> : null}
+                  {opportunity.position ? <span>· {opportunity.position}</span> : null}
+                  {opportunity.region ? <span>· {opportunity.region}</span> : null}
+                </p>
+                <div className="mt-3 flex items-center justify-between">
+                  <span className="flex items-center gap-1 text-[11px] text-slate-600">
+                    <Clock className="h-3 w-3" />
+                    {opportunity.createdAt?.seconds
+                      ? new Date(opportunity.createdAt.seconds * 1000).toLocaleDateString('en-GB', {
+                          day: 'numeric',
+                          month: 'short',
+                        })
+                      : 'Open'}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() =>
+                      setApplyingTo({
+                        id: opportunity.id,
+                        title: opportunity.title,
+                        clubId: opportunity.clubId,
+                      })
+                    }
+                  >
+                    Apply
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Apply Modal */}
-      {applyingTo && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-dark-surface border border-dark-border rounded-2xl shadow-2xl">
-            <div className="flex items-center justify-between p-6 border-b border-dark-border">
+      {/* Breakdown modal */}
+      <Modal
+        open={Boolean(breakdownFor)}
+        onClose={() => setBreakdownFor(null)}
+        title="Score breakdown"
+        description="Every dimension is computed by the deterministic engine. AI never contributes."
+        size="md"
+      >
+        {breakdownFor && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.03] px-4 py-3">
               <div>
-                <h3 className="text-lg font-bold uppercase tracking-tight">Apply for Opportunity</h3>
-                <p className="text-xs text-text-secondary mt-0.5">{applyingTo.title}</p>
+                <p className="text-[13px] font-semibold text-white">{breakdownFor.clubName ?? 'Club'}</p>
+                <p className="mt-0.5 text-[11.5px] text-slate-500">
+                  Config v{breakdownFor.configVersion ?? 1}
+                  {breakdownFor.scoredAt?.seconds
+                    ? ` · scored ${new Date(breakdownFor.scoredAt.seconds * 1000).toLocaleDateString('en-GB')}`
+                    : ''}
+                </p>
               </div>
-              <button onClick={() => setApplyingTo(null)} className="text-text-secondary hover:text-text-primary">
-                <X className="w-5 h-5" />
-              </button>
+              <p className="gw-numeric text-[24px] font-bold text-brand">
+                {Math.round((breakdownFor.matchScore ?? 0) * 100)}%
+              </p>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="bg-dark-bg border border-dark-border rounded-lg p-4">
-                <p className="text-sm font-bold">{applyingTo.title}</p>
-                {applyingTo.clubName && <p className="text-xs text-text-secondary">{applyingTo.clubName}</p>}
-                {applyingTo.position && (
-                  <p className="text-xs text-text-secondary mt-1">Position: <span className="text-brand">{applyingTo.position}</span></p>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-2">Message (Optional)</label>
-                <textarea
-                  value={applyMessage}
-                  onChange={(e) => setApplyMessage(e.target.value)}
-                  className="w-full bg-dark-bg border border-dark-border rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-brand resize-none"
-                  rows={4}
-                  placeholder="Introduce yourself to the club..."
-                />
-              </div>
+
+            <div className="space-y-3">
+              {BREAKDOWN_LABELS.map((row) => {
+                const raw = breakdownFor.scoreBreakdown?.[row.key] ?? 0;
+                const contribution = Math.round(raw * 100);
+                return (
+                  <div key={String(row.key)}>
+                    <div className="mb-1 flex items-center justify-between text-[12px]">
+                      <span className="text-slate-300">
+                        {row.label} <span className="text-slate-600">({row.weight})</span>
+                      </span>
+                      <span className="gw-numeric font-semibold text-white">{contribution}%</span>
+                    </div>
+                    <Progress value={contribution} size="sm" tone={contribution >= 20 ? 'emerald' : 'brand'} />
+                  </div>
+                );
+              })}
             </div>
-            <div className="p-6 border-t border-dark-border flex justify-end space-x-3">
-              <button onClick={() => setApplyingTo(null)} className="px-4 py-2 border border-dark-border text-text-secondary font-bold text-sm rounded hover:bg-dark-bg">
-                Cancel
-              </button>
-              <button
-                onClick={handleApply}
-                disabled={submitting}
-                className="px-6 py-2 bg-brand text-dark-bg font-bold text-sm rounded hover:bg-brand-hover disabled:opacity-60 flex items-center space-x-2"
-              >
-                {submitting ? <Loader className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                <span>Submit Application</span>
-              </button>
+
+            <div className="flex items-start gap-2 rounded-xl border border-white/[0.08] bg-white/[0.02] px-3.5 py-3">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+              <p className="text-[11.5px] leading-relaxed text-slate-400">
+                Contributions are the weighted points earned per dimension. They sum to the final score, clamped
+                between 0 and 1.
+              </p>
             </div>
           </div>
+        )}
+      </Modal>
+
+      {/* Apply modal */}
+      <Modal
+        open={Boolean(applyingTo)}
+        onClose={() => setApplyingTo(null)}
+        title="Submit application"
+        description={applyingTo?.title}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setApplyingTo(null)} disabled={submitting}>
+              Cancel
+            </Button>
+            <Button onClick={handleApply} loading={submitting} iconRight={<ArrowRight className="h-4 w-4" />}>
+              Submit application
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="apply-message" className="mb-1.5 block text-[13px] font-medium text-slate-300">
+              Message to the club <span className="text-slate-600">(optional)</span>
+            </label>
+            <textarea
+              id="apply-message"
+              value={applyMessage}
+              onChange={(e) => setApplyMessage(e.target.value)}
+              rows={4}
+              maxLength={800}
+              placeholder="Introduce yourself and explain why you fit this opportunity."
+              className="w-full resize-y rounded-xl border border-white/[0.10] bg-ink-950/60 px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500 focus:border-brand/60 focus:outline-none focus:ring-2 focus:ring-brand/15"
+            />
+            <p className="mt-1 text-[11px] text-slate-600">{applyMessage.length}/800 characters</p>
+          </div>
+          <div className="flex items-start gap-2 rounded-xl border border-white/[0.08] bg-white/[0.02] px-3.5 py-3">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+            <p className="text-[11.5px] leading-relaxed text-slate-400">
+              Your dossier and approved videos are shared with this club. Private notes are never visible to you, and
+              your contact details are only released if the club shortlists you.
+            </p>
+          </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 };
+

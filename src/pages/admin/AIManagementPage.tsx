@@ -1,129 +1,243 @@
-import { useState } from 'react';
-import { ShieldAlert } from 'lucide-react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+import { collection, getDocs, limit, query } from 'firebase/firestore';
+import { Sparkles, RefreshCw, ShieldCheck, Zap, Database, TrendingUp, AlertTriangle } from 'lucide-react';
+import { db } from '../../lib/firebase';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card, CardHeader } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { Stat } from '../../components/ui/Stat';
+import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { DashboardSkeleton } from '../../components/ui/Skeleton';
+
+interface UsageRow {
+  id: string;
+  purpose?: string;
+  provider?: string;
+  model?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  costUsd?: number;
+  cached?: boolean;
+  timestamp?: { seconds: number };
+}
 
 export const AIManagementPage = () => {
-  const [activeProvider, setActiveProvider] = useState<'claude' | 'openrouter'>('claude');
+  const [usage, setUsage] = useState<UsageRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const stats = {
-    totalCalls: 1420,
-    cachedHits: 1089, // ~76% cache hit rate through deterministic content hashing
-    tokensUsed: '1,842,100',
-    estimatedCost: '£7.38',
-    safetyViolationsBlocked: 0,
-  };
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const snapshot = await getDocs(query(collection(db, 'aiUsage'), limit(500)));
+      const rows = snapshot.docs.map((entry) => ({
+        id: entry.id,
+        ...(entry.data() as Omit<UsageRow, 'id'>),
+      }));
+      rows.sort((a, b) => (b.timestamp?.seconds ?? 0) - (a.timestamp?.seconds ?? 0));
+      setUsage(rows);
+    } catch (err) {
+      console.error(err);
+      setError('We could not load AI usage. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const totals = useMemo(() => {
+    const calls = usage.length;
+    const cached = usage.filter((row) => row.cached).length;
+    const promptTokens = usage.reduce((sum, row) => sum + (row.promptTokens ?? 0), 0);
+    const completionTokens = usage.reduce((sum, row) => sum + (row.completionTokens ?? 0), 0);
+    const cost = usage.reduce((sum, row) => sum + (row.costUsd ?? 0), 0);
+    return {
+      calls,
+      cached,
+      cacheRate: calls > 0 ? Math.round((cached / calls) * 100) : 0,
+      promptTokens,
+      completionTokens,
+      cost,
+    };
+  }, [usage]);
+
+  const byPurpose = useMemo(() => {
+    const map = new Map<string, { calls: number; cost: number }>();
+    for (const row of usage) {
+      const key = row.purpose ?? 'unknown';
+      const current = map.get(key) ?? { calls: 0, cost: 0 };
+      current.calls += 1;
+      current.cost += row.costUsd ?? 0;
+      map.set(key, current);
+    }
+    return Array.from(map.entries()).sort((a, b) => b[1].calls - a[1].calls);
+  }, [usage]);
+
+  if (loading) return <DashboardSkeleton />;
+  if (error) return <ErrorState description={error} onRetry={load} />;
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-12">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Intelligence"
+        title="AI management"
+        description="Advisory-only AI usage, caching and cost. AI never writes match scores or rankings."
+        actions={
+          <Button variant="secondary" size="sm" onClick={load} iconLeft={<RefreshCw className="h-3.5 w-3.5" />}>
+            Refresh
+          </Button>
+        }
+      />
+
+      <div className="flex items-start gap-3 rounded-2xl border border-violet-400/25 bg-violet-400/[0.06] p-4">
+        <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-violet-400" />
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-brand font-bold text-xs uppercase tracking-widest">Intelligence Infrastructure</span>
+          <p className="text-[13px] font-semibold text-violet-100">Hard boundary enforced</p>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-violet-200/80">
+            Firestore rules deny all client and function writes to <code className="font-mono text-[11.5px]">matchResults</code>{' '}
+            and <code className="font-mono text-[11.5px]">playerScores</code>. AI output is stored only in{' '}
+            <code className="font-mono text-[11.5px]">aiResults</code> and is always reviewable by the user.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat
+          label="Total calls"
+          value={totals.calls}
+          icon={<Sparkles className="h-4 w-4" />}
+          tone="violet"
+          hint="Recorded in aiUsage"
+        />
+        <Stat
+          label="Cache hit rate"
+          value={`${totals.cacheRate}%`}
+          icon={<Database className="h-4 w-4" />}
+          tone={totals.cacheRate >= 50 ? 'emerald' : 'amber'}
+          hint={`${totals.cached} cached`}
+        />
+        <Stat
+          label="Tokens"
+          value={(totals.promptTokens + totals.completionTokens).toLocaleString('en-GB')}
+          icon={<Zap className="h-4 w-4" />}
+          tone="sky"
+          hint={`${totals.promptTokens.toLocaleString('en-GB')} in`}
+        />
+        <Stat
+          label="Estimated cost"
+          value={`$${totals.cost.toFixed(2)}`}
+          icon={<TrendingUp className="h-4 w-4" />}
+          tone="brand"
+          hint="Provider-reported"
+        />
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card>
+          <CardHeader
+            title="Usage by feature"
+            description="Where AI spend is going"
+            icon={<Sparkles className="h-4 w-4" />}
+          />
+          <div className="mt-5">
+            {byPurpose.length === 0 ? (
+              <EmptyState
+                compact
+                icon={<Sparkles className="h-6 w-6" />}
+                title="No AI usage recorded"
+                description="Calls appear here once a feature invokes the provider."
+              />
+            ) : (
+              <ul className="space-y-2.5">
+                {byPurpose.map(([purpose, data]) => (
+                  <li
+                    key={purpose}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-[12.5px] font-medium capitalize text-white">
+                        {purpose.replace(/-/g, ' ')}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">{data.calls} calls</p>
+                    </div>
+                    <Badge tone="slate">${data.cost.toFixed(3)}</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-          <h1 className="text-3xl font-black uppercase text-white tracking-tight">AI Management & Cost Control</h1>
-          <p className="text-sm text-slate-400">
-            Monitor server-side AI providers (Claude / OpenRouter), caching metrics, and safeguarding guardrails.
-          </p>
-        </div>
+        </Card>
 
-        <div className="flex items-center gap-2 bg-slate-900 border border-white/10 p-1.5 rounded-2xl">
-          <button
-            onClick={() => setActiveProvider('claude')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              activeProvider === 'claude' ? 'bg-brand text-black shadow-md' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            Claude 3.5 Sonnet
-          </button>
-          <button
-            onClick={() => setActiveProvider('openrouter')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-              activeProvider === 'openrouter' ? 'bg-brand text-black shadow-md' : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            OpenRouter API
-          </button>
-        </div>
+        <Card>
+          <CardHeader
+            title="Recent calls"
+            description="Provider, model and cache state"
+            icon={<Database className="h-4 w-4" />}
+          />
+          <div className="mt-5">
+            {usage.length === 0 ? (
+              <EmptyState
+                compact
+                icon={<Database className="h-6 w-6" />}
+                title="No calls yet"
+                description="Each provider request is logged with tokens and estimated cost."
+              />
+            ) : (
+              <ul className="divide-y divide-white/[0.06]">
+                {usage.slice(0, 8).map((row) => (
+                  <li key={row.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+                    <div className="min-w-0">
+                      <p className="truncate text-[12px] font-medium capitalize text-white">
+                        {row.purpose?.replace(/-/g, ' ') ?? 'unknown'}
+                      </p>
+                      <p className="mt-0.5 text-[10.5px] text-slate-500">
+                        {row.provider ?? '—'} · {row.model ?? '—'}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {row.cached ? <Badge tone="emerald">cached</Badge> : <Badge tone="slate">live</Badge>}
+                      <span className="gw-numeric text-[11px] text-slate-500">
+                        ${(row.costUsd ?? 0).toFixed(3)}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Card>
       </div>
 
-      {/* Strict Security Guardrail Banner */}
-      <div className="bg-brand/10 border border-brand/30 rounded-3xl p-6 flex items-start gap-4">
-        <ShieldAlert className="w-6 h-6 text-brand shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <h2 className="text-sm font-bold text-white">AI Authority & Database Permissions Boundary (Section 28)</h2>
-          <p className="text-xs text-slate-300 leading-relaxed">
-            AI services run exclusively server-side and possess zero permissions to write to <span className="font-mono text-brand">playerScores</span> or <span className="font-mono text-brand">matchResults</span>. AI is restricted to advisory tasks: observable video tagging, squad depth gap auditing, and structured profile recommendations.
-          </p>
+      <Card>
+        <CardHeader
+          title="Guardrails"
+          description="Applied to every AI feature"
+          icon={<AlertTriangle className="h-4 w-4" />}
+        />
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          {[
+            'Versioned system prompts with structured JSON output',
+            'Content hashing and 30-day result caching',
+            'Per-user rate limiting and token caps',
+            'Youth data blocked without granted consent',
+            'No write access to scores, rankings or weights',
+            'Every call logged with provider, model and cost',
+          ].map((item) => (
+            <div
+              key={item}
+              className="flex items-start gap-2 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-2.5"
+            >
+              <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-400" />
+              <p className="text-[12px] leading-relaxed text-slate-300">{item}</p>
+            </div>
+          ))}
         </div>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5">
-          <span className="text-xs font-bold text-slate-400 uppercase">Total AI Queries</span>
-          <p className="text-3xl font-black text-white mt-1">{stats.totalCalls}</p>
-          <p className="text-[11px] text-slate-400 mt-1">Video tags & squad gaps</p>
-        </div>
-
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5">
-          <span className="text-xs font-bold text-slate-400 uppercase">Cache Hit Rate</span>
-          <p className="text-3xl font-black text-emerald-400 mt-1">76.7%</p>
-          <p className="text-[11px] text-slate-400 mt-1">{stats.cachedHits} cached responses</p>
-        </div>
-
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5">
-          <span className="text-xs font-bold text-slate-400 uppercase">Tokens Processed</span>
-          <p className="text-3xl font-black text-white mt-1">{stats.tokensUsed}</p>
-          <p className="text-[11px] text-slate-400 mt-1">Structured JSON schema only</p>
-        </div>
-
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5">
-          <span className="text-xs font-bold text-slate-400 uppercase">Month-to-Date Cost</span>
-          <p className="text-3xl font-black text-brand mt-1">{stats.estimatedCost}</p>
-          <p className="text-[11px] text-slate-400 mt-1">Optimized with SHA-256 deduplication</p>
-        </div>
-      </div>
-
-      {/* Feature Pipelines Audit Table */}
-      <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-6">
-        <h2 className="text-lg font-bold text-white mb-4">AI Feature Execution Boundaries</h2>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="text-[11px] uppercase bg-white/5 text-slate-400 border-b border-white/10">
-              <tr>
-                <th className="px-4 py-3">Feature Pipeline</th>
-                <th className="px-4 py-3">Input Format</th>
-                <th className="px-4 py-3">Output Schema</th>
-                <th className="px-4 py-3">Youth Safeguarding Check</th>
-                <th className="px-4 py-3">Cache Strategy</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              <tr className="hover:bg-white/5 transition-colors">
-                <td className="px-4 py-3 font-bold text-white">Video Observable Tagging</td>
-                <td className="px-4 py-3 font-mono text-slate-400">Sampled Frames + Duration</td>
-                <td className="px-4 py-3 font-mono text-brand">tags[], summary</td>
-                <td className="px-4 py-3 text-emerald-400 font-semibold">Consent Verified Prior to Job</td>
-                <td className="px-4 py-3">Video File Hash</td>
-              </tr>
-              <tr className="hover:bg-white/5 transition-colors">
-                <td className="px-4 py-3 font-bold text-white">Squad Gap Analysis</td>
-                <td className="px-4 py-3 font-mono text-slate-400">Formation + Squad Counts</td>
-                <td className="px-4 py-3 font-mono text-brand">position, gapSeverity, rationale</td>
-                <td className="px-4 py-3 text-slate-400">Aggregated Only</td>
-                <td className="px-4 py-3">Squad Composition JSON Hash</td>
-              </tr>
-              <tr className="hover:bg-white/5 transition-colors">
-                <td className="px-4 py-3 font-bold text-white">Player Improvement Signals</td>
-                <td className="px-4 py-3 font-mono text-slate-400">Missing Profile Fields</td>
-                <td className="px-4 py-3 font-mono text-brand">action, reason</td>
-                <td className="px-4 py-3 text-emerald-400 font-semibold">Own Player Data Only</td>
-                <td className="px-4 py-3">24-Hour TTL Cache</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+      </Card>
     </div>
   );
 };

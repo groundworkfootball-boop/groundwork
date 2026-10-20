@@ -1,90 +1,116 @@
-# GROUNDWORK Firestore Data Model
+﻿# DATA MODEL
 
-## Core Collections
+## Collections
 
-### 1. `users/{uid}`
-- `email`: string
-- `name`: string
-- `role`: `'player' | 'guardian' | 'club' | 'admin'`
-- `createdAt`: serverTimestamp
-- `updatedAt`: serverTimestamp
+### Identity
 
-### 2. `players/{uid}`
-- `id`: string
-- `name`: string
-- `email`: string
-- `dob`: string (YYYY-MM-DD)
-- `isYouth`: boolean
-- `consentStatus`: `'pending' | 'granted' | 'withdrawn'`
-- `consentGrantedAt`?: serverTimestamp
-- `guardianEmail`?: string
-- `guardianName`?: string
-- `relationship`?: string
-- `searchable`: boolean
-- `positions`: string[]
-- `playingLevel`: number (1-10)
-- `region`: string
-- `profileCompleteness`: number (0-100)
-- `affiliatedClubId`?: string
-- `affiliatedClubCode`?: string
-- `skillRatings`: Record<string, number>
-- `hasActiveBoost`: boolean
+| Collection | Doc ID | Purpose |
+| --- | --- | --- |
+| `users` | `uid` | Role, name, email, disabled flag. Server-created only. |
+| `players` | `uid` | Public dossier + scoring inputs. |
+| `youthProfiles` | `uid` | Guardian linkage, consent state, privacy notice version. |
+| `guardians` | `uid` | Guardian identity and linked youth IDs. |
 
-### 3. `clubs/{uid}`
-- `id`: string
-- `name`: string
-- `clubCode`: string (e.g. `GW-ARS-9B2F`, unique)
-- `league`: string
-- `region`: string
-- `verifiedAdult`: boolean
-- `verifiedYouth`: boolean
-- `verificationStatus`: `'pending' | 'under_review' | 'approved' | 'rejected'`
-- `targetPositions`: string[]
-- `targetLevel`: number
-- `requiredAvailability`: string[]
-- `subscriptionTier`: `'free' | 'standard' | 'premium'`
+### Clubs
 
-### 4. `clubInvites/{inviteId}`
-- `clubId`: string
-- `clubName`: string
-- `clubCode`: string
-- `inviteeEmail`: string
-- `inviteeName`?: string
-- `role`: `'player' | 'coach' | 'scout' | 'trialist'`
-- `status`: `'pending' | 'accepted' | 'revoked' | 'expired'`
-- `createdAt`: serverTimestamp
+| Collection | Doc ID | Purpose |
+| --- | --- | --- |
+| `clubs` | `uid` | Public club identity, requirements, verification state. |
+| `clubs/{id}/private/{doc}` | — | Private recruitment notes, staff, finance. |
+| `clubVerifications` | auto | Adult verification submissions. |
+| `youthVerifications` | auto | Safeguarding documentation submissions. |
+| `clubInvites` | auto | Invite codes and share links. |
 
-### 5. `squadMembers/{memberId}`
-- `clubId`: string
-- `playerId`?: string
-- `name`: string
-- `position`: string
-- `ageGroup`: string
-- `playingLevel`: number
-- `status`: `'active' | 'trial' | 'injured'`
-- `addedAt`: serverTimestamp
+### Recruitment
 
-### 6. `playerVideos/{videoId}`
-- `playerId`: string
-- `title`: string
-- `url`: string
-- `processingStatus`: `'pending' | 'processing' | 'ready' | 'failed'`
-- `aiTags`: string[]
-- `published`: boolean
-- `createdAt`: serverTimestamp
+| Collection | Doc ID | Purpose |
+| --- | --- | --- |
+| `opportunities` | auto | Published recruitment requests and trials. |
+| `applications` | auto | Player → club applications with status. |
+| `shortlists` | auto | Club-private shortlist containers. |
+| `shortlistItems` | auto | Players within a shortlist. |
+| `trials` | auto | Trial events, capacity, invitations. |
+| `squadMembers` | auto | Club roster. |
+| `squadRequirements` | auto | Structured squad needs (feeds gap analysis). |
+| `conversations` | auto | Messaging threads. |
+| `conversations/{id}/messages` | auto | Individual messages. |
 
-### 7. `consentAudit/{auditId}`
-- `youthId`: string
-- `guardianId`: string
-- `action`: `'granted' | 'withdrawn' | 're-granted'`
-- `timestamp`: serverTimestamp
-- `privacyNoticeVersion`: string
+### Matching
 
-### 8. `matchingConfigs/default`
-- `positionWeight`: 0.30
-- `distanceWeight`: 0.15
-- `levelWeight`: 0.20
-- `attributesWeight`: 0.20
-- `availabilityWeight`: 0.10
-- `boostWeight`: 0.05
-- `version`: number
+| Collection | Doc ID | Purpose |
+| --- | --- | --- |
+| `matchResults` | `{clubId}_{playerId}` | Precomputed score + breakdown + snapshot. |
+| `playerScores` | `uid` | Aggregate player score inputs. |
+| `matchingConfigs` | `default` | Active weights + version. |
+| `matchingConfigVersions` | auto | Immutable history of every config change. |
+| `matchingJobs` | auto | Recalculation queue. |
+
+### Media
+
+| Collection | Doc ID | Purpose |
+| --- | --- | --- |
+| `playerVideos` | auto | Clip metadata, processing state, AI suggestion. |
+| `videoProcessingJobs` | auto | FFmpeg pipeline state. |
+
+### Trust and compliance
+
+| Collection | Doc ID | Purpose |
+| --- | --- | --- |
+| `consentAudits` | auto | Append-only consent trail. |
+| `auditLogs` | auto | Append-only administrative audit trail. |
+| `moderationReports` | auto | User reports and moderation state. |
+| `gdprRequests` | auto | Export and deletion requests. |
+| `notifications` | auto | In-app notifications. |
+
+### Commerce
+
+| Collection | Doc ID | Purpose |
+| --- | --- | --- |
+| `subscriptions` | `uid` | Stripe-authoritative subscription state. |
+| `payments` | auto | Payment records. |
+| `boosts` | `uid` | Visibility boost state and expiry. |
+| `stripeEvents` | `eventId` | Raw webhook payloads. |
+| `processedStripeEvents` | `eventId` | Idempotency ledger. |
+
+### AI
+
+| Collection | Doc ID | Purpose |
+| --- | --- | --- |
+| `aiJobs` | auto | Queued AI work. |
+| `aiResults` | auto | Cached structured output. |
+| `aiUsage` | auto | Per-call cost and token tracking. |
+| `aiCache` | hash | Provider response cache. |
+
+### Configuration
+
+| Collection | Doc ID | Purpose |
+| --- | --- | --- |
+| `systemSettings` | key | Platform configuration. |
+| `systemConfig` | key | Feature flags. |
+| `analyticsEvents` | auto | Client-emitted product events. |
+
+## Design rules
+
+- **No giant documents.** Profile, private data, guardian data, verification
+  data, media metadata, match data and audit data are separate documents.
+- **Denormalised snapshots** in `matchResults` let club search filter and sort
+  without reading full player documents.
+- **Server-owned fields** are listed in [SECURITY.md](./SECURITY.md).
+- **Append-only collections** (`consentAudits`, `auditLogs`) reject all client
+  writes.
+
+## Indexes
+
+`firestore.indexes.json` declares 35 composite indexes covering:
+
+- `applications`: playerId/clubId + createdAt, playerId + opportunityId, clubId + status + createdAt
+- `matchResults`: playerId + matchScore, clubId + matchScore, clubId + position/ageBand/region/searchable + matchScore
+- `notifications`: userId + createdAt, userId + read + createdAt
+- `opportunities`: clubId + createdAt, status + createdAt
+- `playerVideos`: playerId + createdAt, playerId + processingStatus, playerId + published + processingStatus
+- `consentAudits`: guardianId/youthId + timestamp
+- `aiResults`: ownerId + feature + contentHash
+- `auditLogs`: resourceType/actorId + timestamp
+- `moderationReports`, `gdprRequests`, `trials`, `squadMembers`, `shortlistItems`, `clubs`, `players`
+
+Deploy with `firebase deploy --only firestore:indexes`.

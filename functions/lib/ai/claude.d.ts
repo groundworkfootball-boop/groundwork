@@ -3,7 +3,7 @@ interface HttpProviderOptions {
     name: string;
     apiKey: string;
     baseUrl: string;
-    /** Model key → provider model id. */
+    /** Model key â†’ provider model id. */
     models: Record<string, string>;
     defaultModel: string;
     /** Extra headers (Anthropic requires version header). */

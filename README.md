@@ -1,80 +1,147 @@
-# GROUNDWORK Football Recruitment & Opportunity Platform
+﻿# GROUNDWORK
 
-GROUNDWORK is a multi-sided football opportunity platform connecting adult players, youth players, guardians, football clubs, and platform administrators.
+Deterministic football recruitment for players, guardians and clubs.
 
----
-
-## ⚽ Key Features
-
-- **Role-Dedicated Portals:** Tailored workflows for Player, Guardian, Club, and Administrator accounts.
-- **Unique Club Codes:** Every registered club receives an authoritative alphanumeric identifier (e.g. `GW-ARS-9B2F`) for quick onboarding.
-- **Multi-Platform Club Invites:** 1-click sharing via WhatsApp, Email, SMS, Twitter/X, Facebook, LinkedIn, Direct Link Copy, and standalone QR codes.
-- **Deterministic Matching Engine:** 100% pure mathematical scoring across 6 weights (Position 30%, Level 20%, Attributes 20%, Region 15%, Availability 10%, Boost 5%). **AI never calculates player match scores.**
-- **Transparent Match Explanations:** Real-time percentage contribution breakdown visible to players and scouts.
-- **Youth Safeguarding First:** Automatic minor detection (<18), pending consent state, unsearchable by default, and immediate delisting on consent withdrawal.
-- **Club Recruitment & Squad Management:** Post opportunities, manage shortlists, coordinate trials, and track squad positional balance.
-- **AI Squad Gap Analysis:** Analyzes formation depth to highlight positional gaps and seamlessly routes scouts to qualified deterministic matches.
-- **AI Video Observation Tagging:** Objective action tagging (e.g. "Left Foot Action") requiring explicit player approval before saving.
-- **Auditable Administration:** Club credential reviews, youth clearance approvals, matching weight adjustments, moderation queue, and GDPR data export/deletion workflows.
+Groundwork connects grassroots, Sunday league and academy talent with non-league,
+semi-pro and professional clubs through a transparent, rule-based compatibility
+engine — not guesswork, and never AI scoring.
 
 ---
 
-## 🛠️ Technology Stack
+## Two separate intelligence systems
 
-- **Frontend:** React 19, TypeScript, Vite, React Router v7, Tailwind CSS, Lucide Icons
-- **Backend:** Firebase (Authentication, Cloud Firestore, Cloud Storage, Cloud Functions, Hosting)
-- **Payments:** Stripe Subscriptions & Visibility Boosts
-- **AI:** Server-side Claude / OpenRouter provider abstraction
+| System | Responsibility | Can it be influenced by AI? |
+| --- | --- | --- |
+| **Deterministic matching** | Player–club score, search ranking, score breakdown | **No.** Pure function, no randomness, no time dependence. |
+| **AI assistance** | Video descriptions, squad gap notes, profile tips | Advisory only. No write access to scores, rankings or weights. |
 
----
-
-## 📚 Documentation Directory
-
-- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture and intelligence separation
-- [MATCHING_ENGINE.md](MATCHING_ENGINE.md) - Deterministic scoring algorithm and weight configurations
-- [SAFEGUARDING.md](SAFEGUARDING.md) - Youth protection, guardian consent flows, and club verification
-- [FIREBASE_SETUP.md](FIREBASE_SETUP.md) - Firebase configuration, rules, and environment setup
-- [SECURITY.md](SECURITY.md) - Zero-trust security model and Firestore permission rules
-- [DATA_MODEL.md](DATA_MODEL.md) - Complete Firestore schema and collection specifications
-- [AI.md](AI.md) - AI provider abstraction and ethical guardrails
-- [ADMIN_GUIDE.md](ADMIN_GUIDE.md) - Operational manual for platform administrators
-- [TESTING.md](TESTING.md) - Test strategy and critical test runner instructions
-- [DEPLOYMENT.md](DEPLOYMENT.md) - Production deployment checklist and commands
+The two systems never share a code path. `functions/src/matching/` has no AI
+imports, and `functions/src/ai/` has no write access to `matchResults` or
+`playerScores` (enforced by Firestore rules).
 
 ---
 
-## 🚀 Quick Start
+## Stack
 
-### 1. Install Dependencies
+- **Frontend** — React 19, TypeScript, Vite, React Router 7, Tailwind CSS 4
+- **Backend** — Firebase Auth, Firestore, Storage, Cloud Functions (v2), Hosting
+- **AI** — provider abstraction over Claude / OpenRouter, server-side only
+- **Payments** — Stripe Checkout + Billing Portal, idempotent webhooks
+- **Video** — FFmpeg pipeline (Cloud Run worker), server-validated uploads
+
+---
+
+## Quick start
+
 ```bash
+# 1. Install
 npm install
+cd functions && npm install && cd ..
+
+# 2. Configure
+cp .env.example .env          # fill in your Firebase web credentials
+cp functions/.env.example functions/.env
+
+# 3. Run against emulators
+npm run dev                   # http://localhost:5173
 ```
 
-### 2. Configure Environment Variables
-Copy `.env.example` to `.env.development` and insert your Firebase project credentials:
+### Deploy
+
 ```bash
-cp .env.example .env.development
+firebase login
+firebase use groundwork-8ac4f
+
+# Rules + indexes first
+firebase deploy --only firestore:rules,firestore:indexes,storage
+
+# Functions
+cd functions && npm run build && cd ..
+firebase deploy --only functions
+
+# Hosting
+npm run build
+firebase deploy --only hosting
 ```
 
-### 3. Run Critical Unit Tests
-```bash
-node --experimental-strip-types scripts/test-critical-ts.ts
-```
+> **Composite indexes are required.** `firestore.indexes.json` contains every
+> index the app queries. Until they finish building, the client falls back to a
+> bounded unordered query with an in-memory sort (see
+> `src/lib/firestoreQuery.ts`) so the UI never breaks — but deploy the indexes
+> for production performance.
 
-### 4. Type-Check Codebase
-```bash
-node ./node_modules/typescript/bin/tsc --noEmit
-```
+---
 
-### 5. Start Local Development Server
-```bash
-npm run dev
+## Project layout
+
+```
+src/
+  app/            shared types
+  components/
+    ui/           design-system primitives (Button, Card, Badge, Modal, …)
+    illustrations/ hand-authored SVG artwork
+    layout/       DashboardShell, AuthLayout
+  context/        AuthContext (custom-claims authoritative)
+  lib/
+    firebase.ts   client SDK init
+    firestoreQuery.ts  index-missing fallback helper
+    services/     player, club, guardian, matching, video, admin
+  pages/          public, auth, player, guardian, club, admin
+functions/src/
+  auth/           registration, claims
+  players/        profile updates + completeness
+  clubs/          verification, admin review
+  matching/       deterministic engine, config versions, recalculation
+  safeguarding/   consent grant/withdraw + audit
+  videos/         upload initiation, processing, moderation
+  ai/             provider abstraction, tagging, gaps, recommendations
+  payments/       checkout, webhook
+  notifications/  triggers
+  admin/          player visibility
+  shared/         authz, audit, validation, types
 ```
 
 ---
 
-## 🔒 Security Principles
+## Security model
 
-1. **Deny by default:** Firestore Security Rules verify document ownership, user role claims, and youth consent server-side.
-2. **Deterministic matching:** Player scores are calculated strictly via mathematical rules; AI is barred from scoring or ranking players.
-3. **Guardians in control:** Guardian consent is required before any under-18 profile is indexed or visible to clubs. Delisting is immediate upon withdrawal.
+- **Custom claims are authoritative** for role. The `users/{uid}.role` document
+  field is never trusted for authorization.
+- **Server-owned fields** — `searchable`, `consentStatus`, `profileCompleteness`,
+  `verificationStatus`, `verifiedAdult`, `verifiedYouth`, `matchScore`,
+  subscription and payment state — are rejected by Firestore rules when written
+  by a client.
+- **Youth safeguarding** is enforced in rules *and* functions: a youth profile is
+  readable only when consent is granted, the profile is searchable, and the
+  club's youth verification is live and unexpired.
+- **Audit and consent trails** are append-only and immutable to clients.
+
+See [SECURITY.md](./SECURITY.md) and [SAFEGUARDING.md](./SAFEGUARDING.md).
+
+---
+
+## Testing
+
+```bash
+npm run lint                                   # oxlint
+npx tsc -b                                     # typecheck
+npx vitest run src/lib/*.test.ts               # unit tests (28)
+npx firebase emulators:exec --only firestore \
+  "npx vitest run firestore.test.ts"           # rules tests (33)
+npm run build                                  # production build
+```
+
+---
+
+## Documentation
+
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — system design
+- [DATA_MODEL.md](./DATA_MODEL.md) — Firestore collections
+- [MATCHING_ENGINE.md](./MATCHING_ENGINE.md) — scoring specification
+- [SAFEGUARDING.md](./SAFEGUARDING.md) — youth protection model
+- [SECURITY.md](./SECURITY.md) — threat model and controls
+- [AI.md](./AI.md) — provider abstraction and guardrails
+- [FIREBASE_SETUP.md](./FIREBASE_SETUP.md) — project configuration
+- [DEPLOYMENT.md](./DEPLOYMENT.md) — release process
+- [TESTING.md](./TESTING.md) — test strategy
+- [ADMIN_GUIDE.md](./ADMIN_GUIDE.md) — operations runbook

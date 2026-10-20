@@ -1,4 +1,4 @@
-# Logs
+﻿# Logs
 logs
 *.log
 npm-debug.log*
@@ -32,8 +32,12 @@ dist-ssr
 .env
 .env.*
 !.env.example
+functions/.env
+functions/.env.*
+!functions/.env.example
 *.pem
 *.key
 *.cert
 firebase-adminsdk-*.json
 serviceAccountKey.json
+

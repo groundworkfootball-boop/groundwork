@@ -1,43 +1,133 @@
 rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GROUNDWORK — Cloud Storage Security Rules
+//
+// Youth media is never public. Access requires:
+//   • the owning player, OR
+//   • a club with live youth verification AND granted consent, OR
+//   • an administrator.
+// Uploads are restricted to the owner's own path and validated again by the
+// initiateVideoUpload Cloud Function before a signed URL is issued.
+// ─────────────────────────────────────────────────────────────────────────────
+
 service firebase.storage {
   match /b/{bucket}/o {
+
     function signedIn() {
       return request.auth != null;
     }
 
-    function isOwner(userId) {
-      return signedIn() && request.auth.uid == userId;
+    function uid() {
+      return request.auth.uid;
     }
 
     function isAdmin() {
       return signedIn() && request.auth.token.role == 'admin';
     }
 
-    // Deny all by default
+    function isOwner(userId) {
+      return signedIn() && uid() == userId;
+    }
+
+    function isClub() {
+      return signedIn() && request.auth.token.role == 'club';
+    }
+
+    function myClub() {
+      return firestore.get(/databases/(default)/documents/clubs/$(uid())).data;
+    }
+
+    function youthVerificationLive() {
+      return isClub()
+        && myClub().verifiedYouth == true
+        && myClub().verificationStatus == 'approved'
+        && myClub().youthVerificationExpiresAt != null
+        && myClub().youthVerificationExpiresAt > request.time;
+    }
+
+    function adultVerificationLive() {
+      return isClub()
+        && myClub().verifiedAdult == true
+        && myClub().verificationStatus == 'approved';
+    }
+
+    function videoDoc(videoId) {
+      return firestore.get(/databases/(default)/documents/playerVideos/$(videoId)).data;
+    }
+
+    // Deny everything by default.
     match /{allPaths=**} {
       allow read, write: if false;
     }
 
-    // User profile photos and public assets
-    match /users/{userId}/{allPaths=**} {
+    // ── Avatars ─────────────────────────────────────────────────────────────
+    match /users/{userId}/avatar/{fileName} {
       allow read: if signedIn();
-      allow write: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId)
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
     }
 
-    // Player video uploads (raw & processed)
-    match /videos/{userId}/{videoId}/{allPaths=**} {
+    // ── Club logos & public brand assets ────────────────────────────────────
+    match /clubs/{clubId}/branding/{fileName} {
       allow read: if signedIn();
-      allow write: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(clubId)
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
     }
 
-    match /playerVideos/{userId}/{videoId}/{allPaths=**} {
-      allow read: if signedIn();
-      allow write: if isOwner(userId) || isAdmin();
+    // ── Club verification documents (private) ───────────────────────────────
+    match /clubDocuments/{clubId}/{fileName} {
+      allow read: if isOwner(clubId) || isAdmin();
+      allow write: if isOwner(clubId)
+        && request.resource.size < 20 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*')
+            || request.resource.contentType == 'application/pdf');
     }
 
-    // Club verification and safeguarding documents (strictly club owner and admin)
-    match /clubDocuments/{clubId}/{allPaths=**} {
-      allow read, write: if isOwner(clubId) || isAdmin();
+    // ── Player video: raw uploads (owner only) ──────────────────────────────
+    match /videos/{userId}/{videoId}/raw/{fileName} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if isOwner(userId)
+        && request.resource.size < 250 * 1024 * 1024
+        && request.resource.contentType.matches('video/.*');
+    }
+
+    // ── Player video: processed output ──────────────────────────────────────
+    // Read access is gated on the video document's published + consent state,
+    // which is itself only writable by Cloud Functions.
+    match /videos/{userId}/{videoId}/processed/{fileName} {
+      allow read: if isOwner(userId)
+        || isAdmin()
+        || (adultVerificationLive()
+            && videoDoc(videoId).published == true
+            && videoDoc(videoId).isYouth != true)
+        || (youthVerificationLive()
+            && videoDoc(videoId).published == true
+            && videoDoc(videoId).isYouth == true
+            && videoDoc(videoId).consentStatus == 'granted');
+      allow write: if false; // Cloud Functions only
+    }
+
+    // ── Player video: thumbnails ────────────────────────────────────────────
+    match /videos/{userId}/{videoId}/thumbnails/{fileName} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    // ── Youth media (strictly protected) ────────────────────────────────────
+    match /youthMedia/{youthId}/{fileName} {
+      allow read: if isOwner(youthId) || isAdmin() || youthVerificationLive();
+      allow write: if isOwner(youthId)
+        && request.resource.size < 250 * 1024 * 1024
+        && request.resource.contentType.matches('video/.*');
+    }
+
+    // ── GDPR export bundles (owner + admin only) ────────────────────────────
+    match /exports/{userId}/{fileName} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow write: if false;
     }
   }
 }

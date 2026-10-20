@@ -1,313 +1,254 @@
-import { useEffect, useState } from 'react';
+﻿import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import {
-  ShieldAlert,
-  ShieldCheck,
   Users,
   Building2,
+  ShieldCheck,
+  ShieldAlert,
   FileText,
   Activity,
-  Loader2,
+  ArrowRight,
   Sliders,
-  Sparkles,
-  CheckCircle2,
+  Lightbulb,
+  DollarSign,
   Lock,
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { db } from '../../lib/firebase';
-import { collection, getDocs, query, orderBy, limit, where } from 'firebase/firestore';
+import { useAsync } from '../../lib/useAsync';
+import { getAdminOverview, listRecentAuditLogs } from '../../lib/services/adminService';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card, CardHeader } from '../../components/ui/Card';
+import { Stat } from '../../components/ui/Stat';
+import { Badge } from '../../components/ui/Badge';
+import { ButtonLink } from '../../components/ui/Button';
+import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { DashboardSkeleton } from '../../components/ui/Skeleton';
 
-interface AuditEntry {
-  id: string;
-  action: string;
-  actorId?: string;
-  targetType?: string;
-  timestamp?: { seconds: number };
-}
-
-interface PendingClub {
-  id: string;
-  name: string;
-  region?: string;
-  verificationStatus?: string;
-  verifiedAdult?: boolean;
-  verifiedYouth?: boolean;
-}
-
-interface Stats {
-  totalUsers: number;
-  totalClubs: number;
-  pendingVerifications: number;
-  totalOpportunities: number;
-  totalPlayers: number;
-  youthPlayers: number;
-  adultPlayers: number;
-  totalAuditLogs: number;
-}
-
-function formatTimeAgo(entry: AuditEntry): string {
-  if (!entry.timestamp?.seconds) return 'Just now';
-  const diff = Date.now() / 1000 - entry.timestamp.seconds;
-  if (diff < 60) return 'Just now';
-  if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} hr ago`;
-  return `${Math.floor(diff / 86400)} days ago`;
+function formatRelative(seconds?: number): string {
+  if (!seconds) return '—';
+  const diff = Math.floor(Date.now() / 1000 - seconds);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }
 
 export const AdminDashboard = () => {
-  const [stats, setStats] = useState<Stats>({
-    totalUsers: 0,
-    totalClubs: 0,
-    pendingVerifications: 0,
-    totalOpportunities: 0,
-    totalPlayers: 0,
-    youthPlayers: 0,
-    adultPlayers: 0,
-    totalAuditLogs: 0,
-  });
-  const [pendingClubs, setPendingClubs] = useState<PendingClub[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const overview = useAsync(() => getAdminOverview(), []);
+  const audits = useAsync(() => listRecentAuditLogs(8), []);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      try {
-        const [usersSnap, clubsSnap, verSnap, oppsSnap, playersSnap, logsSnap] = await Promise.all([
-          getDocs(collection(db, 'users')),
-          getDocs(collection(db, 'clubs')),
-          getDocs(query(collection(db, 'clubs'), where('verificationStatus', '==', 'pending'))),
-          getDocs(collection(db, 'opportunities')),
-          getDocs(collection(db, 'players')),
-          getDocs(query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'), limit(6))),
-        ]);
+  const loading = overview.loading || audits.loading;
+  const error = overview.error || audits.error;
 
-        let youthCount = 0;
-        let adultCount = 0;
-        playersSnap.docs.forEach((d) => {
-          if (d.data().isYouth) {
-            youthCount++;
-          } else {
-            adultCount++;
-          }
-        });
+  const stats = overview.data;
+  const recentAudits = useMemo(() => audits.data ?? [], [audits.data]);
 
-        setStats({
-          totalUsers: usersSnap.size,
-          totalClubs: clubsSnap.size,
-          pendingVerifications: verSnap.size,
-          totalOpportunities: oppsSnap.size,
-          totalPlayers: playersSnap.size,
-          youthPlayers: youthCount,
-          adultPlayers: adultCount,
-          totalAuditLogs: (await getDocs(collection(db, 'auditLogs'))).size,
-        });
-
-        setPendingClubs(
-          verSnap.docs.map((d) => ({
-            id: d.id,
-            name: d.data().name || 'Club Verification Request',
-            region: d.data().region,
-            verificationStatus: d.data().verificationStatus,
-            verifiedAdult: d.data().verifiedAdult,
-            verifiedYouth: d.data().verifiedYouth,
-          }))
-        );
-
-        setAuditLogs(logsSnap.docs.map((d) => ({ id: d.id, ...d.data() } as AuditEntry)));
-      } catch (err) {
-        console.error('Admin dashboard error:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-brand animate-spin" />
-      </div>
-    );
-  }
+  if (loading) return <DashboardSkeleton />;
+  if (error) return <ErrorState onRetry={() => { overview.reload(); audits.reload(); }} />;
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-12">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-brand font-bold text-xs uppercase tracking-widest">Master Command Center</span>
-            <span className="px-2 py-0.5 rounded-full bg-red-500/10 border border-red-500/30 text-red-400 text-[10px] font-bold">
-              PLATFORM ADMINISTRATOR
-            </span>
-          </div>
-          <h1 className="text-3xl font-black uppercase text-white tracking-tight">System Administration</h1>
-          <p className="text-sm text-slate-400">
-            Oversee platform compliance, club verifications, youth safeguarding, deterministic matching, and security.
-          </p>
-        </div>
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Administration"
+        title="Platform operations"
+        description="Verification queues, safeguarding, moderation and system health."
+        actions={
+          <>
+            <ButtonLink to="/dashboard/admin/matching-config" variant="secondary" size="sm" iconLeft={<Sliders className="h-3.5 w-3.5" />}>
+              Matching config
+            </ButtonLink>
+            <ButtonLink to="/dashboard/admin/youth-verification" size="sm" iconRight={<ArrowRight className="h-3.5 w-3.5" />}>
+              Review queue
+            </ButtonLink>
+          </>
+        }
+      />
 
-        <div className="flex items-center gap-3">
-          <Link
-            to="/dashboard/admin/matching-config"
-            className="bg-brand hover:bg-brand-hover text-black font-bold px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 text-sm shadow-lg shadow-brand/20"
-          >
-            <Sliders className="w-4 h-4" />
-            <span>Matching Config</span>
-          </Link>
+      {(stats?.pendingVerifications ?? 0) > 0 && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+            <div>
+              <p className="text-[13.5px] font-semibold text-amber-100">
+                {stats?.pendingVerifications} verification {stats?.pendingVerifications === 1 ? 'request' : 'requests'} pending
+              </p>
+              <p className="mt-0.5 text-[12.5px] leading-relaxed text-amber-200/80">
+                Youth verification requires safeguarding documentation review before approval.
+              </p>
+            </div>
+          </div>
+          <ButtonLink to="/dashboard/admin/clubs" size="sm" variant="secondary">
+            Open queue
+          </ButtonLink>
         </div>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat
+          label="Total players"
+          value={stats?.totalPlayers ?? 0}
+          icon={<Users className="h-4 w-4" />}
+          tone="brand"
+          hint={`${stats?.adultPlayers ?? 0} adult · ${stats?.youthPlayers ?? 0} youth`}
+        />
+        <Stat
+          label="Clubs"
+          value={stats?.totalClubs ?? 0}
+          icon={<Building2 className="h-4 w-4" />}
+          tone="sky"
+          hint={`${stats?.verifiedClubs ?? 0} verified`}
+        />
+        <Stat
+          label="Pending verification"
+          value={stats?.pendingVerifications ?? 0}
+          icon={<ShieldCheck className="h-4 w-4" />}
+          tone={(stats?.pendingVerifications ?? 0) > 0 ? 'amber' : 'emerald'}
+          hint="Awaiting review"
+        />
+        <Stat
+          label="Open reports"
+          value={stats?.openReports ?? 0}
+          icon={<ShieldAlert className="h-4 w-4" />}
+          tone={(stats?.openReports ?? 0) > 0 ? 'rose' : 'emerald'}
+          hint="Moderation queue"
+        />
       </div>
 
-      {/* Primary KPI Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs uppercase font-bold tracking-wider">Total Users</span>
-            <Users className="w-4 h-4 text-brand" />
-          </div>
-          <div>
-            <p className="text-3xl font-black text-white">{stats.totalUsers}</p>
-            <p className="text-[11px] text-slate-400 mt-1">Platform Registrations</p>
-          </div>
-        </div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat
+          label="Applications"
+          value={stats?.totalApplications ?? 0}
+          icon={<FileText className="h-4 w-4" />}
+          tone="violet"
+          hint="All time"
+        />
+        <Stat
+          label="Active subscriptions"
+          value={stats?.activeSubscriptions ?? 0}
+          icon={<DollarSign className="h-4 w-4" />}
+          tone="emerald"
+          hint="Stripe-authoritative"
+        />
+        <Stat
+          label="AI calls (30d)"
+          value={stats?.aiCalls30d ?? 0}
+          icon={<Lightbulb className="h-4 w-4" />}
+          tone="amber"
+          hint="Advisory only"
+        />
+        <Stat
+          label="GDPR requests"
+          value={stats?.openGdprRequests ?? 0}
+          icon={<Lock className="h-4 w-4" />}
+          tone={(stats?.openGdprRequests ?? 0) > 0 ? 'amber' : 'emerald'}
+          hint="Pending processing"
+        />
+      </div>
 
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs uppercase font-bold tracking-wider">Total Clubs</span>
-            <Building2 className="w-4 h-4 text-blue-400" />
+      <div className="grid gap-5 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader
+            title="Recent audit activity"
+            description="Append-only — written by Cloud Functions only"
+            icon={<Activity className="h-4 w-4" />}
+            action={
+              <Link to="/dashboard/audit-logs" className="text-[12px] font-semibold text-brand hover:underline">
+                Full trail
+              </Link>
+            }
+          />
+          <div className="mt-5">
+            {recentAudits.length === 0 ? (
+              <EmptyState
+                compact
+                icon={<Activity className="h-6 w-6" />}
+                title="No audit activity yet"
+                description="Administrative actions, verification decisions and consent changes appear here."
+              />
+            ) : (
+              <ul className="divide-y divide-white/[0.06]">
+                {recentAudits.map((entry) => (
+                  <li key={entry.id} className="flex items-start gap-3 py-3 first:pt-0 last:pb-0">
+                    <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04]">
+                      <Activity className="h-3.5 w-3.5 text-slate-400" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[12.5px] font-medium text-white">
+                        {String(entry.action ?? 'action').replace(/_/g, ' ')}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        {entry.actorRole ? `${entry.actorRole} · ` : ''}
+                        {entry.resourceType ?? 'resource'}
+                        {entry.resourceId ? ` · ${String(entry.resourceId).slice(0, 12)}` : ''}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-[11px] text-slate-600">
+                      {formatRelative(entry.timestamp?.seconds)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-          <div>
-            <p className="text-3xl font-black text-white">{stats.totalClubs}</p>
-            <p className="text-[11px] text-slate-400 mt-1">Recruiting Entities</p>
-          </div>
-        </div>
+        </Card>
 
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs uppercase font-bold tracking-wider">Pending Verification</span>
-            <ShieldAlert className="w-4 h-4 text-amber-400" />
+        <Card>
+          <CardHeader
+            title="Operational queues"
+            description="Where attention is needed"
+            icon={<Clock className="h-4 w-4" />}
+          />
+          <div className="mt-5 space-y-2.5">
+            {[
+              {
+                to: '/dashboard/admin/clubs',
+                label: 'Club verification',
+                count: stats?.pendingVerifications ?? 0,
+                tone: 'amber' as const,
+              },
+              {
+                to: '/dashboard/admin/youth-verification',
+                label: 'Youth verification',
+                count: stats?.pendingYouthVerifications ?? 0,
+                tone: 'rose' as const,
+              },
+              {
+                to: '/dashboard/admin/moderation',
+                label: 'Moderation reports',
+                count: stats?.openReports ?? 0,
+                tone: 'violet' as const,
+              },
+              {
+                to: '/dashboard/admin/gdpr',
+                label: 'GDPR requests',
+                count: stats?.openGdprRequests ?? 0,
+                tone: 'sky' as const,
+              },
+            ].map((queue) => (
+              <Link
+                key={queue.to}
+                to={queue.to}
+                className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-3 transition-colors hover:border-white/[0.14] hover:bg-white/[0.04]"
+              >
+                <span className="text-[12.5px] font-medium text-white">{queue.label}</span>
+                <Badge tone={queue.count > 0 ? queue.tone : 'slate'}>{queue.count}</Badge>
+              </Link>
+            ))}
           </div>
-          <div>
-            <p className="text-3xl font-black text-amber-400">{stats.pendingVerifications}</p>
-            <p className="text-[11px] text-slate-400 mt-1">Requires Admin Action</p>
-          </div>
-        </div>
 
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs uppercase font-bold tracking-wider">Players Roster</span>
-            <Activity className="w-4 h-4 text-emerald-400" />
-          </div>
-          <div>
-            <p className="text-3xl font-black text-white">{stats.totalPlayers}</p>
-            <p className="text-[11px] text-slate-400 mt-1">
-              {stats.adultPlayers} Adult • {stats.youthPlayers} Youth
+          <div className="mt-5 rounded-xl border border-emerald-400/20 bg-emerald-400/[0.05] p-3.5">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+              <p className="text-[12px] font-semibold text-emerald-200">Safeguarding enforced</p>
+            </div>
+            <p className="mt-1.5 text-[11.5px] leading-relaxed text-emerald-200/70">
+              Youth reads require live club verification, granted consent and searchable state — checked in rules and
+              functions.
             </p>
           </div>
-        </div>
-      </div>
-
-      {/* Operational Modules Quick Access Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-        {[
-          { label: 'Users Directory', to: '/dashboard/users', icon: Users },
-          { label: 'Club Verification', to: '/dashboard/admin/clubs', icon: Building2 },
-          { label: 'Youth Safeguarding', to: '/dashboard/admin/youth-verification', icon: ShieldCheck },
-          { label: 'Matching Weights', to: '/dashboard/admin/matching-config', icon: Sliders },
-          { label: 'AI Management', to: '/dashboard/admin/ai', icon: Sparkles },
-          { label: 'GDPR / Privacy', to: '/dashboard/admin/gdpr', icon: Lock },
-        ].map((mod) => (
-          <Link
-            key={mod.label}
-            to={mod.to}
-            className="p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-brand/30 hover:bg-brand/5 transition-all text-center flex flex-col items-center justify-center gap-2 group"
-          >
-            <mod.icon className="w-5 h-5 text-slate-400 group-hover:text-brand transition-colors" />
-            <span className="text-xs font-bold text-white leading-tight">{mod.label}</span>
-          </Link>
-        ))}
-      </div>
-
-      {/* Main Grid: Pending Verifications & Real-Time Audit Logs */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: Pending Club Verifications Queue */}
-        <div className="lg:col-span-2 bg-slate-900/80 border border-white/10 rounded-3xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-amber-400" />
-              <h2 className="text-lg font-bold text-white">Club Verification Queue</h2>
-            </div>
-            <Link to="/dashboard/admin/clubs" className="text-xs text-brand hover:underline font-semibold">
-              Manage All
-            </Link>
-          </div>
-
-          {pendingClubs.length === 0 ? (
-            <div className="py-12 text-center text-slate-400">
-              <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-400 mb-3" />
-              <p className="text-sm font-medium">All club verification requests have been processed.</p>
-              <p className="text-xs text-slate-500 mt-1">No pending applications in the queue.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {pendingClubs.map((cl) => (
-                <div
-                  key={cl.id}
-                  className="p-4 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-between gap-4"
-                >
-                  <div>
-                    <h3 className="font-bold text-white text-sm">{cl.name}</h3>
-                    <p className="text-xs text-slate-400">
-                      Region: {cl.region || 'UK Regional'} • Status: <span className="text-amber-400 capitalize">{cl.verificationStatus}</span>
-                    </p>
-                  </div>
-
-                  <Link
-                    to="/dashboard/admin/clubs"
-                    className="bg-brand hover:bg-brand-hover text-black font-bold px-3 py-1.5 rounded-xl text-xs transition-all"
-                  >
-                    Review Documents
-                  </Link>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Right Col: Recent System Audit Trail */}
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <FileText className="w-5 h-5 text-brand" />
-              <h2 className="text-lg font-bold text-white">Audit Trail</h2>
-            </div>
-            <Link to="/dashboard/audit-logs" className="text-xs text-brand hover:underline font-semibold">
-              View All
-            </Link>
-          </div>
-
-          {auditLogs.length === 0 ? (
-            <div className="py-12 text-center text-slate-400">
-              <FileText className="w-10 h-10 mx-auto text-slate-600 mb-3" />
-              <p className="text-xs">No recent administrative audits logged.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {auditLogs.map((log) => (
-                <div key={log.id} className="p-3 rounded-xl bg-white/5 border border-white/5 text-xs space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-white capitalize">{log.action.replace('_', ' ')}</span>
-                    <span className="text-slate-400 text-[11px]">{formatTimeAgo(log)}</span>
-                  </div>
-                  <p className="text-slate-400 truncate">
-                    Actor: <span className="text-slate-300 font-mono">{log.actorId || 'System Worker'}</span>
-                  </p>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        </Card>
       </div>
     </div>
   );

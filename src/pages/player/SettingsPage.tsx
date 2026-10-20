@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
 import { db } from '../../lib/firebase';
@@ -45,8 +45,10 @@ export const SettingsPage = () => {
     e.preventDefault();
     setSaving(true);
     try {
+      // `searchable` is server-owned: it is derived from consent for youth
+      // accounts and cannot be written by the client. Only editable profile
+      // fields are sent here.
       await updateDoc(doc(db, 'players', user!.uid), {
-        searchable,
         region,
         displayName,
         updatedAt: serverTimestamp(),
@@ -140,31 +142,33 @@ export const SettingsPage = () => {
           </select>
         </div>
 
-        <div className="p-4 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              {searchable ? <Eye className="w-4 h-4 text-brand" /> : <EyeOff className="w-4 h-4 text-slate-500" />}
-              <span>Search Visibility</span>
-            </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              {isYouth
-                ? 'Subject to valid guardian consent. Turning off immediately delists your profile from club queries.'
-                : 'Control whether verified clubs can discover and view your profile in candidate searches.'}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setSearchable(!searchable)}
-            className={`w-12 h-6 rounded-full transition-colors relative p-1 ${
-              searchable ? 'bg-brand' : 'bg-slate-700'
-            }`}
-          >
-            <div
-              className={`w-4 h-4 rounded-full bg-black transition-transform ${
-                searchable ? 'translate-x-6' : 'translate-x-0'
+        <div className="p-4 rounded-2xl bg-white/5 border border-white/5">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                {searchable ? <Eye className="w-4 h-4 text-brand" /> : <EyeOff className="w-4 h-4 text-slate-500" />}
+                <span>Search Visibility</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {isYouth
+                  ? 'Controlled by guardian consent. Your profile is only visible to clubs with live youth verification.'
+                  : 'Controlled by the platform. Contact support if you need your profile delisted.'}
+              </p>
+            </div>
+            <span
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wide ${
+                searchable
+                  ? 'border-brand/30 bg-brand/10 text-brand'
+                  : 'border-white/10 bg-white/5 text-slate-400'
               }`}
-            />
-          </button>
+            >
+              {searchable ? 'Visible' : 'Hidden'}
+            </span>
+          </div>
+          <p className="mt-2.5 text-[11px] leading-relaxed text-slate-500">
+            Visibility is a server-owned field. It is set by guardian consent for youth accounts and cannot be changed
+            from the browser.
+          </p>
         </div>
 
         <button
@@ -224,3 +228,5 @@ export const SettingsPage = () => {
     </div>
   );
 };
+
+

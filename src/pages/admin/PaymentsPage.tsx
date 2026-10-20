@@ -1,117 +1,198 @@
-import { useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+import { collection, getDocs, limit, query } from 'firebase/firestore';
+import { RefreshCw, Receipt, Search } from 'lucide-react';
+import { db } from '../../lib/firebase';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { TableSkeleton } from '../../components/ui/Skeleton';
+
+interface PaymentRow {
+  id: string;
+  userId?: string;
+  customerName?: string;
+  amount?: number;
+  currency?: string;
+  description?: string;
+  status?: string;
+  createdAt?: { seconds: number };
+}
+
+const STATUS_TONE = {
+  succeeded: 'emerald',
+  paid: 'emerald',
+  pending: 'amber',
+  failed: 'rose',
+  refunded: 'slate',
+} as const;
+
+function formatAmount(amount?: number, currency = 'gbp'): string {
+  if (typeof amount !== 'number') return '—';
+  return new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency: currency.toUpperCase(),
+  }).format(amount / 100);
+}
+
+function formatDate(seconds?: number): string {
+  if (!seconds) return '—';
+  return new Date(seconds * 1000).toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 export const PaymentsPage = () => {
-  const [transactions] = useState([
-    {
-      id: 'ch_3M4j182k9',
-      customer: 'Camden United FC',
-      amount: '£49.00',
-      type: 'Club Pro Subscription',
-      status: 'succeeded',
-      date: 'Today, 14:22',
-    },
-    {
-      id: 'ch_3M4j091m4',
-      customer: 'Marcus Cole',
-      amount: '£9.99',
-      type: 'Player Pro Membership',
-      status: 'succeeded',
-      date: 'Today, 11:05',
-    },
-    {
-      id: 'ch_3M4i983a1',
-      customer: 'North London Elite',
-      amount: '£35.00',
-      type: '14-Day Opportunity Boost',
-      status: 'succeeded',
-      date: 'Yesterday, 18:40',
-    },
-    {
-      id: 'ch_3M4i882f0',
-      customer: 'Westway Academy FC',
-      amount: '£149.00',
-      type: 'Elite Academy Subscription',
-      status: 'succeeded',
-      date: '24 Feb, 09:15',
-    },
-  ]);
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const snapshot = await getDocs(query(collection(db, 'payments'), limit(100)));
+      const rows = snapshot.docs.map((entry) => ({
+        id: entry.id,
+        ...(entry.data() as Omit<PaymentRow, 'id'>),
+      }));
+      rows.sort((a, b) => (b.createdAt?.seconds ?? 0) - (a.createdAt?.seconds ?? 0));
+      setPayments(rows);
+    } catch (err) {
+      console.error(err);
+      setError('We could not load payments. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const filtered = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return payments;
+    return payments.filter(
+      (row) =>
+        (row.customerName ?? '').toLowerCase().includes(term) ||
+        (row.description ?? '').toLowerCase().includes(term) ||
+        row.id.toLowerCase().includes(term),
+    );
+  }, [payments, search]);
+
+  const totalVolume = useMemo(
+    () =>
+      payments
+        .filter((row) => row.status === 'succeeded' || row.status === 'paid')
+        .reduce((sum, row) => sum + (row.amount ?? 0), 0),
+    [payments],
+  );
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader eyebrow="Finance" title="Payments" />
+        <TableSkeleton rows={8} cols={5} />
+      </div>
+    );
+  }
+
+  if (error) return <ErrorState description={error} onRetry={load} />;
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-12">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-brand font-bold text-xs uppercase tracking-widest">Financial Operations</span>
-          </div>
-          <h1 className="text-3xl font-black uppercase text-white tracking-tight">Payments & Revenue Ledger</h1>
-          <p className="text-sm text-slate-400">
-            Stripe webhook event logs, customer subscription charges, and visibility boost transactions.
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Finance"
+        title="Payments"
+        description="Stripe is authoritative. Records are written only by the verified webhook handler."
+        actions={
+          <Button variant="secondary" size="sm" onClick={load} iconLeft={<RefreshCw className="h-3.5 w-3.5" />}>
+            Refresh
+          </Button>
+        }
+      />
+
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Card padding="sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Transactions</p>
+          <p className="gw-numeric mt-2 text-[24px] font-bold text-white">{payments.length}</p>
+        </Card>
+        <Card padding="sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Settled volume</p>
+          <p className="gw-numeric mt-2 text-[24px] font-bold text-emerald-300">{formatAmount(totalVolume)}</p>
+        </Card>
+        <Card padding="sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Failed</p>
+          <p className="gw-numeric mt-2 text-[24px] font-bold text-rose-300">
+            {payments.filter((row) => row.status === 'failed').length}
           </p>
-        </div>
+        </Card>
       </div>
 
-      {/* Financial KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5">
-          <span className="text-xs font-bold text-slate-400 uppercase">Monthly Recurring Revenue</span>
-          <p className="text-3xl font-black text-brand mt-1">£3,420</p>
-          <p className="text-[11px] text-slate-400 mt-1">+18% this month</p>
-        </div>
+      <Card padding="sm">
+        <Input
+          placeholder="Search by customer, description or payment ID"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          iconLeft={<Search className="h-4 w-4" />}
+          aria-label="Search payments"
+        />
+      </Card>
 
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5">
-          <span className="text-xs font-bold text-slate-400 uppercase">Active Subscriptions</span>
-          <p className="text-3xl font-black text-white mt-1">54</p>
-          <p className="text-[11px] text-slate-400 mt-1">Clubs & Player Pro</p>
-        </div>
-
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5">
-          <span className="text-xs font-bold text-slate-400 uppercase">Visibility Boosts</span>
-          <p className="text-3xl font-black text-white mt-1">£620</p>
-          <p className="text-[11px] text-slate-400 mt-1">1-time listing promotions</p>
-        </div>
-
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-5">
-          <span className="text-xs font-bold text-slate-400 uppercase">Dispute Rate</span>
-          <p className="text-3xl font-black text-emerald-400 mt-1">0.0%</p>
-          <p className="text-[11px] text-slate-400 mt-1">Fully reconciled</p>
-        </div>
-      </div>
-
-      {/* Transactions Table */}
-      <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-6">
-        <h2 className="text-lg font-bold text-white mb-4">Recent Stripe Webhook Transactions</h2>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="text-[11px] uppercase bg-white/5 text-slate-400 border-b border-white/10">
-              <tr>
-                <th className="px-4 py-3">Charge ID</th>
-                <th className="px-4 py-3">Customer / Club</th>
-                <th className="px-4 py-3">Product / Tier</th>
-                <th className="px-4 py-3">Amount</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3 text-right">Recorded Date</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {transactions.map((tx) => (
-                <tr key={tx.id} className="hover:bg-white/5 transition-colors">
-                  <td className="px-4 py-3 font-mono text-brand font-bold">{tx.id}</td>
-                  <td className="px-4 py-3 font-bold text-white">{tx.customer}</td>
-                  <td className="px-4 py-3 text-slate-300">{tx.type}</td>
-                  <td className="px-4 py-3 font-mono font-bold text-white">{tx.amount}</td>
-                  <td className="px-4 py-3 capitalize">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold text-emerald-400 bg-emerald-400/10 border border-emerald-400/30">
-                      {tx.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right text-slate-400">{tx.date}</td>
+      {filtered.length === 0 ? (
+        <EmptyState
+          icon={<Receipt className="h-6 w-6" />}
+          title="No payments recorded"
+          description={
+            search
+              ? 'No payment matches that search.'
+              : 'Completed Stripe checkouts appear here once the webhook processes them.'
+          }
+        />
+      ) : (
+        <Card padding="none" className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-white/[0.08] bg-white/[0.03]">
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Payment</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Customer</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Description</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Amount</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Status</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Date</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+              </thead>
+              <tbody>
+                {filtered.map((row) => (
+                  <tr key={row.id} className="border-b border-white/[0.05] last:border-0">
+                    <td className="px-4 py-3 font-mono text-[11px] text-slate-500">{row.id.slice(0, 14)}</td>
+                    <td className="px-4 py-3 text-[12.5px] font-medium text-white">{row.customerName ?? '—'}</td>
+                    <td className="px-4 py-3 text-[12px] text-slate-400">{row.description ?? '—'}</td>
+                    <td className="px-4 py-3 text-[12.5px] font-semibold text-white">
+                      {formatAmount(row.amount, row.currency)}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge tone={STATUS_TONE[(row.status ?? 'pending') as keyof typeof STATUS_TONE] ?? 'slate'}>
+                        {row.status ?? 'pending'}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-[11.5px] text-slate-500">{formatDate(row.createdAt?.seconds)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 };
+

@@ -1,147 +1,148 @@
-import { Link } from 'react-router-dom';
-import { ShieldCheck, ShieldAlert, Lock, CheckCircle2, UserCheck, AlertOctagon, Zap, ArrowRight } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
+﻿import { ShieldCheck, CheckCircle2, AlertTriangle, Lock, FileCheck2, Users } from 'lucide-react';
+import { PublicLayout, PublicPageHeader } from '../../components/layout/PublicLayout';
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { SafeguardingIllustration } from '../../components/illustrations';
+
+const LIFECYCLE = [
+  {
+    state: 'Consent pending',
+    tone: 'amber' as const,
+    body: 'The profile is hidden and unsearchable. No club can read it, even with a direct database request.',
+  },
+  {
+    state: 'Consent granted',
+    tone: 'emerald' as const,
+    body: 'Visible only to clubs holding live youth verification. Expiry is evaluated on every read.',
+  },
+  {
+    state: 'Consent withdrawn',
+    tone: 'rose' as const,
+    body: 'Delisted immediately, AI processing blocked, associated media queued for deletion.',
+  },
+];
+
+const CONTROLS = [
+  {
+    icon: Lock,
+    title: 'Enforced in security rules',
+    body: 'Firestore rules evaluate consent state, searchability, club verification and expiry on every single read.',
+  },
+  {
+    icon: ShieldCheck,
+    title: 'Enforced in Cloud Functions',
+    body: 'Privileged operations re-check the same invariants before reading or writing youth data.',
+  },
+  {
+    icon: FileCheck2,
+    title: 'Immutable audit trail',
+    body: 'Every grant, withdrawal and re-grant writes an append-only record no client can modify or delete.',
+  },
+  {
+    icon: Users,
+    title: 'Guardian control',
+    body: 'Only the guardian linked to the profile can grant or withdraw consent, verified by their authenticated email.',
+  },
+];
 
 export const SafeguardingPage = () => {
-  const { isAuthenticated } = useAuth();
-
-  const safeguards = [
-    {
-      title: 'Automated Minor Detection',
-      desc: 'Player registration dates of birth are checked deterministically at registration. Any applicant under 18 years of age is instantly categorized as a protected youth player.',
-      icon: UserCheck,
-    },
-    {
-      title: 'Strict Concealment Default',
-      desc: 'All minor profiles default to searchable: false and consentStatus: pending. No youth player data is ever indexed into club search engines without prior guardian validation.',
-      icon: Lock,
-    },
-    {
-      title: 'Audited Club Clearance',
-      desc: 'Clubs must present verified safeguarding certificates, DBS documentation, and designated safeguarding officer (DSO) credentials to recruit youth players.',
-      icon: ShieldCheck,
-    },
-    {
-      title: 'Instant De-Listing on Withdrawal',
-      desc: 'Guardians possess unconditional statutory rights to withdraw consent at any instant. Revocation removes the athlete from club search indices with zero delay.',
-      icon: AlertOctagon,
-    },
-    {
-      title: 'Immutable Audit Trail',
-      desc: 'Every consent grant, renewal, or revocation generates an append-only audit record stamped with timestamp and policy version for statutory governance.',
-      icon: CheckCircle2,
-    },
-    {
-      title: 'Zero AI Evaluation on Minors Without Consent',
-      desc: 'Artificial intelligence services are programmatically blocked from processing youth footage or metadata unless verified consent status is actively granted.',
-      icon: ShieldAlert,
-    },
-  ];
-
   return (
-    <div className="min-h-screen bg-dark-bg text-white font-sans flex flex-col">
-      {/* Top Header */}
-      <header className="px-6 lg:px-12 py-5 flex justify-between items-center border-b border-dark-border bg-dark-bg/90 backdrop-blur-md sticky top-0 z-50">
-        <Link to="/" className="flex items-center gap-2 group">
-          <div className="w-8 h-8 rounded-xl bg-brand/10 border border-brand/30 flex items-center justify-center text-brand group-hover:scale-105 transition-transform">
-            <Zap className="w-4 h-4" />
-          </div>
-          <span className="font-black text-xl tracking-tight uppercase text-white">Groundwork</span>
-        </Link>
-        <div className="flex items-center gap-4">
-          <Link to="/pricing" className="text-xs font-bold uppercase text-slate-400 hover:text-white transition-colors hidden sm:block">
-            Pricing
-          </Link>
-          <Link to="/how-it-works" className="text-xs font-bold uppercase text-slate-400 hover:text-white transition-colors hidden sm:block">
-            Engine
-          </Link>
-          {isAuthenticated ? (
-            <Link to="/dashboard" className="px-4 py-2 bg-brand text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl">
-              Dashboard
-            </Link>
-          ) : (
-            <Link to="/login" className="px-4 py-2 bg-brand text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl">
-              Sign In
-            </Link>
-          )}
-        </div>
-      </header>
+    <PublicLayout>
+      <PublicPageHeader
+        eyebrow="Safeguarding"
+        title="Youth protection is architecture, not a checkbox."
+        description="Groundwork treats safeguarding as a system-wide security requirement. Every relevant backend operation evaluates role, verification, expiry, guardian relationship and consent state."
+      >
+        <Badge tone="emerald" icon={<ShieldCheck className="h-3 w-3" />}>
+          Deny by default
+        </Badge>
+      </PublicPageHeader>
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-6xl mx-auto px-6 py-16 space-y-16">
-        {/* Banner */}
-        <div className="text-center space-y-4 max-w-3xl mx-auto">
-          <span className="text-emerald-400 font-bold text-xs uppercase tracking-widest px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full inline-block">
-            Child Protection & FA Compliance
-          </span>
-          <h1 className="text-4xl md:text-6xl font-black uppercase tracking-tight text-white leading-tight">
-            Safeguarding is a System Requirement, Not an Optional Feature
-          </h1>
-          <p className="text-sm md:text-base text-slate-400 leading-relaxed">
-            Groundwork operates with defense-in-depth security to protect youth players. We partner with parents,
-            guardians, and accredited football clubs to ensure every child remains secure throughout their pathway.
-          </p>
-        </div>
-
-        {/* 6 Safeguard Pillars */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {safeguards.map((item) => (
-            <div
-              key={item.title}
-              className="bg-dark-surface border border-dark-border rounded-3xl p-6 space-y-3 hover:border-emerald-500/30 transition-all group"
-            >
-              <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center group-hover:scale-105 transition-transform">
-                <item.icon className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-black uppercase text-white tracking-wide">{item.title}</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">{item.desc}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* Defense-in-Depth Technical Guarantee */}
-        <div className="bg-dark-surface border border-dark-border rounded-3xl p-8 md:p-12 space-y-6">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-6 h-6 text-brand" />
-            <h2 className="text-xl font-black uppercase text-white tracking-tight">
-              Server-Enforced Zero-Trust Security Architecture
-            </h2>
-          </div>
-          <p className="text-xs md:text-sm text-slate-300 leading-relaxed">
-            Per the Groundwork architecture specification, youth safeguarding is never enforced merely on the React client.
-            Even if an adversarial actor inspects the DOM or issues raw API queries, Firestore Security Rules and Cloud Functions
-            enforce mandatory custom claim authorization and cryptographic consent status checks on every single request.
-          </p>
-
-          <div className="p-4 rounded-2xl bg-dark-bg border border-dark-border font-mono text-xs text-slate-400 space-y-1">
-            <p className="text-brand font-bold">// Mandatory Youth Access Rule</p>
-            <p>request.auth.token.role == 'club' &amp;&amp;</p>
-            <p>get(/databases/$(database)/documents/clubs/$(request.auth.uid)).data.verifiedYouth == true &amp;&amp;</p>
-            <p>resource.data.consentStatus == 'granted';</p>
-          </div>
-        </div>
-
-        {/* Guardian CTA */}
-        <div className="bg-gradient-to-r from-emerald-950/40 via-dark-surface to-dark-surface border border-emerald-500/30 rounded-3xl p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+      <section className="mx-auto max-w-8xl px-5 py-16 lg:px-8 lg:py-20">
+        <div className="grid items-center gap-14 lg:grid-cols-2">
           <div>
-            <h3 className="text-lg font-black uppercase text-white">Are You a Parent or Legal Guardian?</h3>
-            <p className="text-xs text-slate-400 mt-1 max-w-xl">
-              Access the Guardian Oversight Portal to inspect your ward's discovery status, review scout communications, or update parental permissions.
-            </p>
+            <SafeguardingIllustration />
           </div>
-          <Link
-            to={isAuthenticated ? '/dashboard/guardian/consent' : '/register'}
-            className="px-6 py-3 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl flex items-center gap-2 shrink-0 transition-all"
-          >
-            <span>Open Guardian Portal</span>
-            <ArrowRight className="w-4 h-4" />
-          </Link>
-        </div>
-      </main>
+          <div>
+            <h2 className="gw-display text-[clamp(1.8rem,3.4vw,2.6rem)] text-white">
+              A minor&apos;s profile is invisible until a guardian says otherwise.
+            </h2>
+            <p className="mt-4 text-[14px] leading-relaxed text-slate-400">
+              Consent is not a UI toggle. It is enforced in Firestore rules, in Cloud Functions and in Storage rules —
+              so bypassing the React application changes nothing.
+            </p>
 
-      <footer className="border-t border-dark-border py-8 px-6 text-center text-xs text-slate-500">
-        <p>© 2026 Groundwork Football Technologies Ltd. Child Safety Compliance Hotline: safeguarding@groundwork.football</p>
-      </footer>
-    </div>
+            <div className="mt-7 space-y-3">
+              {LIFECYCLE.map((item) => (
+                <div key={item.state} className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+                  <Badge tone={item.tone} dot>
+                    {item.state}
+                  </Badge>
+                  <p className="mt-2.5 text-[12.5px] leading-relaxed text-slate-400">{item.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-y border-white/[0.06] bg-ink-900/30">
+        <div className="mx-auto max-w-8xl px-5 py-16 lg:px-8 lg:py-20">
+          <h2 className="gw-display text-[clamp(1.6rem,3vw,2.2rem)] text-white">Defence in depth</h2>
+          <p className="mt-3 max-w-2xl text-[14px] leading-relaxed text-slate-400">
+            Four independent layers must all agree before youth data is returned.
+          </p>
+
+          <div className="mt-8 grid gap-5 sm:grid-cols-2">
+            {CONTROLS.map((control) => (
+              <Card key={control.title} padding="md">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-400/25 bg-emerald-400/10">
+                  <control.icon className="h-4.5 w-4.5 text-emerald-300" />
+                </span>
+                <h3 className="mt-4 text-[14px] font-semibold text-white">{control.title}</h3>
+                <p className="mt-2 text-[12.5px] leading-relaxed text-slate-400">{control.body}</p>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-8xl px-5 py-16 lg:px-8 lg:py-20">
+        <div className="grid gap-5 lg:grid-cols-2">
+          <Card padding="lg">
+            <h3 className="text-[15px] font-semibold text-white">Club youth verification</h3>
+            <ul className="mt-4 space-y-2.5">
+              {[
+                'Approved adult verification is required first',
+                'Safeguarding documentation reviewed by a safeguarding admin',
+                'Grants expire after 12 months',
+                'Expiry is checked on every read — access lapses automatically',
+                'Every decision is written to the audit log',
+              ].map((item) => (
+                <li key={item} className="flex items-start gap-2">
+                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                  <span className="text-[12.5px] leading-relaxed text-slate-300">{item}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+
+          <Card padding="lg">
+            <h3 className="text-[15px] font-semibold text-white">AI and youth data</h3>
+            <p className="mt-3 text-[12.5px] leading-relaxed text-slate-400">
+              Youth data is never sent to an AI provider unless consent is granted. This is checked before enqueueing,
+              when the worker picks up the job, and immediately before the provider request.
+            </p>
+            <div className="mt-4 flex items-start gap-2 rounded-xl border border-amber-400/25 bg-amber-400/[0.06] px-3.5 py-3">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+              <p className="text-[12px] leading-relaxed text-amber-100/85">
+                If consent is withdrawn while a job is queued, the job is skipped. Guardian contact details are never
+                included in AI prompts.
+              </p>
+            </div>
+          </Card>
+        </div>
+      </section>
+    </PublicLayout>
   );
 };

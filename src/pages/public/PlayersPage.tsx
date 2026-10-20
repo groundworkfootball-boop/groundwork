@@ -1,113 +1,123 @@
-import { Link } from 'react-router-dom';
-import { Target, Star, Video, Bell, Zap, ArrowRight, ShieldCheck } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
+﻿import { ArrowRight, Target, Video, Sparkles, CheckCircle2, TrendingUp } from 'lucide-react';
+import { PublicLayout, PublicPageHeader } from '../../components/layout/PublicLayout';
+import { ButtonLink } from '../../components/ui/Button';
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { DossierIllustration, VideoAnalysisIllustration } from '../../components/illustrations';
+
+const BENEFITS = [
+  {
+    icon: Target,
+    title: 'Matched, not filtered',
+    body: 'Every club requirement is scored against your dossier. You see the percentage and the exact breakdown.',
+  },
+  {
+    icon: Video,
+    title: 'Video that speaks for you',
+    body: 'Upload match clips. Processing, thumbnails and observable AI descriptions run server-side.',
+  },
+  {
+    icon: Sparkles,
+    title: 'Advice, not judgement',
+    body: 'AI suggestions read only your own profile signals. They never rate your ability or affect your score.',
+  },
+];
 
 export const PlayersPage = () => {
-  const { isAuthenticated } = useAuth();
-
-  const playerFeatures = [
-    {
-      title: 'Digital Scouting Dossier',
-      desc: 'Showcase your attributes, dominant foot, playing tier, physical metrics, and achievements in a clean verified format that club scouts respect.',
-      icon: Target,
-    },
-    {
-      title: 'Personalized Opportunity Feed',
-      desc: 'Discover active club recruitment trials tailored deterministically to your positions, travel radius, and verified playing tier.',
-      icon: Star,
-    },
-    {
-      title: 'Video Vault & AI Highlights',
-      desc: 'Upload high-definition match clips. Assistive AI automatically tags observable physical sequences to help scouts find your highlights instantly.',
-      icon: Video,
-    },
-    {
-      title: 'Real-time Trial Alerts',
-      desc: 'Receive direct in-app and email notifications the instant a club shortlists your dossier or issues a formal trial invitation.',
-      icon: Bell,
-    },
-    {
-      title: 'Statutory Safeguarding Protection',
-      desc: 'Minors under 18 benefit from encrypted guardian oversight and strict club verification checks to ensure a secure recruitment journey.',
-      icon: ShieldCheck,
-    },
-    {
-      title: 'Search Visibility Boosts',
-      desc: 'Accelerate your pathway with optional visibility boosts that place your verified dossier directly in front of scouts in your region.',
-      icon: Zap,
-    },
-  ];
-
   return (
-    <div className="min-h-screen bg-dark-bg text-white font-sans flex flex-col">
-      <header className="px-6 lg:px-12 py-5 flex justify-between items-center border-b border-dark-border bg-dark-bg/90 backdrop-blur-md sticky top-0 z-50">
-        <Link to="/" className="flex items-center gap-2 group">
-          <div className="w-8 h-8 rounded-xl bg-brand/10 border border-brand/30 flex items-center justify-center text-brand group-hover:scale-105 transition-transform">
-            <Zap className="w-4 h-4" />
-          </div>
-          <span className="font-black text-xl tracking-tight uppercase text-white">Groundwork</span>
-        </Link>
-        <div className="flex items-center gap-4">
-          <Link to="/pricing" className="text-xs font-bold uppercase text-slate-400 hover:text-white transition-colors hidden sm:block">
-            Pricing
-          </Link>
-          <Link to="/safeguarding" className="text-xs font-bold uppercase text-slate-400 hover:text-white transition-colors hidden sm:block">
-            Safeguarding
-          </Link>
-          {isAuthenticated ? (
-            <Link to="/dashboard" className="px-4 py-2 bg-brand text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl">
-              Dashboard
-            </Link>
-          ) : (
-            <Link to="/login" className="px-4 py-2 bg-brand text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl">
-              Sign In
-            </Link>
-          )}
+    <PublicLayout>
+      <PublicPageHeader
+        eyebrow="For players"
+        title="Your dossier, scored honestly."
+        description="Build a structured profile, upload match footage, and see exactly which clubs you match — and why."
+      >
+        <div className="flex flex-wrap gap-3">
+          <ButtonLink to="/register" iconRight={<ArrowRight className="h-4 w-4" />}>
+            Create your profile
+          </ButtonLink>
+          <ButtonLink to="/how-it-works" variant="secondary">
+            How scoring works
+          </ButtonLink>
         </div>
-      </header>
+      </PublicPageHeader>
 
-      <main className="flex-1 max-w-6xl mx-auto px-6 py-16 space-y-16">
-        <div className="text-center space-y-4 max-w-3xl mx-auto">
-          <span className="text-brand font-bold text-xs uppercase tracking-widest px-3 py-1 bg-brand/10 border border-brand/20 rounded-full inline-block">
-            Athlete Opportunity Pathway
-          </span>
-          <h1 className="text-4xl md:text-6xl font-black uppercase tracking-tight text-white leading-tight">
-            Stop Waiting to Be Scouted. Put Your Data on the Map.
-          </h1>
-          <p className="text-sm md:text-base text-slate-400 leading-relaxed">
-            The direct route for grassroots, Sunday league, and academy footballers looking to break into non-league,
-            semi-pro, and professional clubs across the UK.
-          </p>
-          <div className="pt-4 flex items-center justify-center gap-3">
-            <Link
-              to="/register"
-              className="px-6 py-3.5 bg-brand text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl hover:bg-brand-hover transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(204,255,0,0.25)]"
-            >
-              <span>Build Your Free Dossier</span>
-              <ArrowRight className="w-4 h-4" />
-            </Link>
+      <section className="mx-auto max-w-8xl px-5 py-16 lg:px-8 lg:py-20">
+        <div className="grid items-center gap-14 lg:grid-cols-2">
+          <div>
+            <Badge tone="brand" icon={<TrendingUp className="h-3 w-3" />}>
+              Player dossier
+            </Badge>
+            <h2 className="gw-display mt-4 text-[clamp(1.8rem,3.4vw,2.6rem)] text-white">
+              The data clubs actually filter on.
+            </h2>
+            <p className="mt-4 text-[14px] leading-relaxed text-slate-400">
+              Positions, playing level, physical attributes, availability and video. Completeness is calculated
+              server-side and drives how discoverable you are.
+            </p>
+
+            <ul className="mt-6 space-y-3">
+              {[
+                'Primary and secondary positions',
+                'Technical, physical and mental ratings',
+                'Training and trial availability',
+                'Playing history and achievements',
+                'Up to 10 reviewed video clips',
+              ].map((item) => (
+                <li key={item} className="flex items-start gap-2.5">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
+                  <span className="text-[13px] leading-relaxed text-slate-300">{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <DossierIllustration />
           </div>
         </div>
+      </section>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {playerFeatures.map((feat) => (
-            <div
-              key={feat.title}
-              className="bg-dark-surface border border-dark-border rounded-3xl p-6 space-y-3 hover:border-brand/30 transition-all group"
-            >
-              <div className="w-10 h-10 rounded-2xl bg-brand/10 border border-brand/30 text-brand flex items-center justify-center group-hover:scale-105 transition-transform">
-                <feat.icon className="w-5 h-5" />
-              </div>
-              <h3 className="text-sm font-black uppercase text-white tracking-wide">{feat.title}</h3>
-              <p className="text-xs text-slate-400 leading-relaxed">{feat.desc}</p>
+      <section className="border-y border-white/[0.06] bg-ink-900/30">
+        <div className="mx-auto max-w-8xl px-5 py-16 lg:px-8 lg:py-20">
+          <div className="grid gap-5 md:grid-cols-3">
+            {BENEFITS.map((item) => (
+              <Card key={item.title} padding="md">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-brand/25 bg-brand/10">
+                  <item.icon className="h-4.5 w-4.5 text-brand" />
+                </span>
+                <h3 className="mt-4 text-[14px] font-semibold text-white">{item.title}</h3>
+                <p className="mt-2 text-[12.5px] leading-relaxed text-slate-400">{item.body}</p>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-8xl px-5 py-16 lg:px-8 lg:py-20">
+        <div className="grid items-center gap-14 lg:grid-cols-2">
+          <div className="order-2 lg:order-1">
+            <VideoAnalysisIllustration />
+          </div>
+          <div className="order-1 lg:order-2">
+            <h2 className="gw-display text-[clamp(1.8rem,3.4vw,2.6rem)] text-white">
+              AI describes. You decide.
+            </h2>
+            <p className="mt-4 text-[14px] leading-relaxed text-slate-400">
+              After processing, AI generates observable-only descriptions — camera framing, dominant foot, third of the
+              pitch, action type. You review and accept, edit or reject each one.
+            </p>
+            <div className="mt-6 rounded-xl border border-violet-400/25 bg-violet-400/[0.06] p-4">
+              <p className="text-[12.5px] leading-relaxed text-violet-100/85">
+                AI never rates your ability, predicts potential, or influences your match score. Those are hard
+                boundaries enforced in code and in security rules.
+              </p>
             </div>
-          ))}
+            <ButtonLink to="/register" className="mt-7" iconRight={<ArrowRight className="h-4 w-4" />}>
+              Start your dossier
+            </ButtonLink>
+          </div>
         </div>
-      </main>
-
-      <footer className="border-t border-dark-border py-8 px-6 text-center text-xs text-slate-500">
-        <p>© 2026 Groundwork Football Technologies Ltd. Player Opportunity Pathway.</p>
-      </footer>
-    </div>
+      </section>
+    </PublicLayout>
   );
 };
