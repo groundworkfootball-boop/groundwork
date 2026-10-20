@@ -1,4 +1,4 @@
-export { setUserRoleClaims } from './auth/claims.js';
+export { setUserRoleClaims, adminSetUserRole, adminGetUserClaims } from './auth/claims.js';
 export { createAccount, syncClaimsOnUserCreated } from './auth/registration.js';
 export { sendConsentInvite, grantConsent, withdrawConsent, reGrantConsent, onConsentChange, } from './safeguarding/consent.js';
 export { updateMatchingConfig, getMatchingConfigState } from './matching/configs.js';

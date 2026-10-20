@@ -107,7 +107,7 @@ async function applyCheckoutCompleted(session) {
  * STRIPE_WEBHOOK_SECRET using the raw request body, then processes events
  * idempotently via `processedStripeEvents`.
  */
-export const stripeWebhook = onRequest({ region: 'europe-west1' }, async (req, res) => {
+export const stripeWebhook = onRequest(async (req, res) => {
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? '';
     const stripe = getStripe();
     if (!stripe || !webhookSecret) {
@@ -144,7 +144,7 @@ export const stripeWebhook = onRequest({ region: 'europe-west1' }, async (req, r
         return;
     }
     if (!fresh) {
-        // Duplicate delivery — acknowledge without repeating side effects.
+        // Duplicate delivery â€” acknowledge without repeating side effects.
         res.status(200).json({ received: true, duplicate: true });
         return;
     }
@@ -187,7 +187,7 @@ export const stripeWebhook = onRequest({ region: 'europe-west1' }, async (req, r
     }
     catch (err) {
         console.error('stripe webhook handler failed', event.type, err);
-        // Do NOT leave the event claimed on failure — remove the claim so Stripe
+        // Do NOT leave the event claimed on failure â€” remove the claim so Stripe
         // retries are allowed.
         await adminDb
             .collection('processedStripeEvents')

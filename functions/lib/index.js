@@ -1,5 +1,20 @@
+import { setGlobalOptions } from 'firebase-functions/v2';
+// All callables and triggers deploy to the same region the web client targets.
+// Without this, v2 functions default to us-central1 while the client calls
+// europe-west2, and the resulting 404 has no CORS headers — which the browser
+// reports as a CORS failure rather than a missing function.
+// Cost guardrails for the Blaze plan. maxInstances caps horizontal scaling so a
+// traffic spike or a runaway loop cannot generate an unbounded bill; concurrency
+// keeps the instance count (and therefore cold starts) low for a small user base.
+setGlobalOptions({
+    region: 'europe-west2',
+    maxInstances: 10,
+    concurrency: 40,
+    memory: '256MiB',
+    timeoutSeconds: 60,
+});
 // Auth
-export { setUserRoleClaims } from './auth/claims.js';
+export { setUserRoleClaims, adminSetUserRole, adminGetUserClaims } from './auth/claims.js';
 export { createAccount, syncClaimsOnUserCreated } from './auth/registration.js';
 // Safeguarding
 export { sendConsentInvite, grantConsent, withdrawConsent, reGrantConsent, onConsentChange, } from './safeguarding/consent.js';

@@ -367,4 +367,203 @@ describe('Firestore security rules', () => {
     const db = testEnv.authenticatedContext('player-1', { role: 'player' }).firestore();
     await assertFails(deleteDoc(doc(db, 'gdprRequests', 'r1')));
   });
+  // ── Self-provisioning (registration fallback) ─────────────────────────────
+  // These rules keep registration working before Cloud Functions are deployed.
+  // They must never allow privilege escalation or a searchable youth profile.
+  describe('self-provisioning', () => {
+    const newUser = (uid: string) => testEnv.authenticatedContext(uid).firestore();
+
+    it('allows a new user to create their own users document', async () => {
+      const db = newUser('new-1');
+      await assertSucceeds(
+        setDoc(doc(db, 'users', 'new-1'), {
+          uid: 'new-1',
+          email: 'a@example.com',
+          name: 'New Player',
+          role: 'player',
+          emailVerified: false,
+          disabled: false,
+        }),
+      );
+    });
+
+    it('prevents a new user from creating an admin users document', async () => {
+      const db = newUser('new-2');
+      await assertFails(
+        setDoc(doc(db, 'users', 'new-2'), {
+          uid: 'new-2',
+          email: 'a@example.com',
+          name: 'Sneaky',
+          role: 'admin',
+          disabled: false,
+        }),
+      );
+    });
+
+    it('prevents creating a users document for another uid', async () => {
+      const db = newUser('new-3');
+      await assertFails(
+        setDoc(doc(db, 'users', 'someone-else'), {
+          uid: 'someone-else',
+          email: 'a@example.com',
+          name: 'Sneaky',
+          role: 'player',
+          disabled: false,
+        }),
+      );
+    });
+
+    it('prevents a user who already has claims from re-creating their document', async () => {
+      const db = testEnv.authenticatedContext('existing-1', { role: 'player' }).firestore();
+      await assertFails(
+        setDoc(doc(db, 'users', 'existing-1'), {
+          uid: 'existing-1',
+          email: 'a@example.com',
+          name: 'Existing',
+          role: 'player',
+          disabled: false,
+        }),
+      );
+    });
+
+    it('allows a new player to create an unsearchable profile', async () => {
+      const db = newUser('new-4');
+      await assertSucceeds(
+        setDoc(doc(db, 'players', 'new-4'), {
+          uid: 'new-4',
+          name: 'New Player',
+          role: 'player',
+          isYouth: false,
+          searchable: false,
+          consentStatus: 'n/a',
+          profileCompleteness: 0,
+        }),
+      );
+    });
+
+    it('prevents a new player from creating a searchable profile', async () => {
+      const db = newUser('new-5');
+      await assertFails(
+        setDoc(doc(db, 'players', 'new-5'), {
+          uid: 'new-5',
+          name: 'New Player',
+          role: 'player',
+          isYouth: false,
+          searchable: true,
+          consentStatus: 'n/a',
+          profileCompleteness: 0,
+        }),
+      );
+    });
+
+    it('prevents a new player from self-verifying', async () => {
+      const db = newUser('new-6');
+      await assertFails(
+        setDoc(doc(db, 'players', 'new-6'), {
+          uid: 'new-6',
+          name: 'New Player',
+          role: 'player',
+          isYouth: false,
+          searchable: false,
+          consentStatus: 'n/a',
+          profileCompleteness: 0,
+          verified: true,
+        }),
+      );
+    });
+
+    it('prevents a new player from granting themselves a boost', async () => {
+      const db = newUser('new-7');
+      await assertFails(
+        setDoc(doc(db, 'players', 'new-7'), {
+          uid: 'new-7',
+          name: 'New Player',
+          role: 'player',
+          isYouth: false,
+          searchable: false,
+          consentStatus: 'n/a',
+          profileCompleteness: 0,
+          boostStatus: 'active',
+        }),
+      );
+    });
+
+    it('allows a new youth profile to be created as pending and unsearchable', async () => {
+      const db = newUser('new-8');
+      await assertSucceeds(
+        setDoc(doc(db, 'youthProfiles', 'new-8'), {
+          playerId: 'new-8',
+          guardianEmail: 'parent@example.com',
+          consentStatus: 'pending',
+          searchable: false,
+        }),
+      );
+    });
+
+    it('prevents a new youth profile from being created with consent already granted', async () => {
+      const db = newUser('new-9');
+      await assertFails(
+        setDoc(doc(db, 'youthProfiles', 'new-9'), {
+          playerId: 'new-9',
+          guardianEmail: 'parent@example.com',
+          consentStatus: 'granted',
+          searchable: true,
+        }),
+      );
+    });
+
+    it('allows a new club to create an unverified club record', async () => {
+      const db = newUser('new-club');
+      await assertSucceeds(
+        setDoc(doc(db, 'clubs', 'new-club'), {
+          uid: 'new-club',
+          name: 'New FC',
+          role: 'club',
+          verificationStatus: 'pending',
+          verifiedAdult: false,
+          verifiedYouth: false,
+        }),
+      );
+    });
+
+    it('prevents a new club from self-verifying', async () => {
+      const db = newUser('new-club-2');
+      await assertFails(
+        setDoc(doc(db, 'clubs', 'new-club-2'), {
+          uid: 'new-club-2',
+          name: 'New FC',
+          role: 'club',
+          verificationStatus: 'approved',
+          verifiedAdult: true,
+          verifiedYouth: true,
+        }),
+      );
+    });
+
+    it('allows a new guardian to create their own record', async () => {
+      const db = newUser('new-guardian');
+      await assertSucceeds(
+        setDoc(doc(db, 'guardians', 'new-guardian'), {
+          uid: 'new-guardian',
+          email: 'g@example.com',
+          name: 'Guardian',
+          role: 'guardian',
+          linkedYouthIds: [],
+        }),
+      );
+    });
+
+    it('prevents a new guardian from pre-linking a youth', async () => {
+      const db = newUser('new-guardian-2');
+      await assertFails(
+        setDoc(doc(db, 'guardians', 'new-guardian-2'), {
+          uid: 'new-guardian-2',
+          email: 'g@example.com',
+          name: 'Guardian',
+          role: 'guardian',
+          linkedYouthIds: ['victim-youth'],
+        }),
+      );
+    });
+  });
 });

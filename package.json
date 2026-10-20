@@ -8,7 +8,11 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "firebase emulators:exec --only firestore \"vitest run\""
+    "test": "firebase emulators:exec --only firestore \"vitest run\"",
+    "deploy": "npm run build && npm --prefix functions run build && firebase deploy",
+    "deploy:functions": "npm --prefix functions run build && firebase deploy --only functions",
+    "deploy:rules": "firebase deploy --only firestore:rules,firestore:indexes,storage",
+    "preflight": "node scripts/preflight.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",

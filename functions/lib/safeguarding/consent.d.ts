@@ -32,6 +32,6 @@ export declare function queueYouthMediaDeletion(youthId: string): Promise<void>;
  * malicious client (or mismatched trigger) flips consent state directly, this
  * reconciles the players document, match results, and media visibility.
  */
-export declare const onConsentChange: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").DocumentSnapshot> | undefined, {
+export declare const onConsentChange: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").Change<import("firebase-functions/v2/firestore").DocumentSnapshot> | undefined, {
     youthId: string;
 }>>;

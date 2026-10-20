@@ -1,4 +1,4 @@
-import { onRequest } from 'firebase-functions/v2/https';
+﻿import { onRequest } from 'firebase-functions/v2/https';
 import Stripe from 'stripe';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../shared/firebaseAdmin.js';
@@ -122,7 +122,7 @@ async function applyCheckoutCompleted(session: Stripe.Checkout.Session): Promise
  * STRIPE_WEBHOOK_SECRET using the raw request body, then processes events
  * idempotently via `processedStripeEvents`.
  */
-export const stripeWebhook = onRequest({ region: 'europe-west1' }, async (req, res) => {
+export const stripeWebhook = onRequest(async (req, res) => {
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? '';
   const stripe = getStripe();
 
@@ -161,7 +161,7 @@ export const stripeWebhook = onRequest({ region: 'europe-west1' }, async (req, r
     return;
   }
   if (!fresh) {
-    // Duplicate delivery — acknowledge without repeating side effects.
+    // Duplicate delivery â€” acknowledge without repeating side effects.
     res.status(200).json({ received: true, duplicate: true });
     return;
   }
@@ -205,7 +205,7 @@ export const stripeWebhook = onRequest({ region: 'europe-west1' }, async (req, r
     res.status(200).json({ received: true });
   } catch (err) {
     console.error('stripe webhook handler failed', event.type, err);
-    // Do NOT leave the event claimed on failure — remove the claim so Stripe
+    // Do NOT leave the event claimed on failure â€” remove the claim so Stripe
     // retries are allowed.
     await adminDb
       .collection('processedStripeEvents')
@@ -215,3 +215,4 @@ export const stripeWebhook = onRequest({ region: 'europe-west1' }, async (req, r
     res.status(500).json({ error: 'Handler failed.' });
   }
 });
+

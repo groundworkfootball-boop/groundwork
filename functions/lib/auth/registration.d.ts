@@ -9,6 +9,6 @@ export declare const createAccount: import("firebase-functions/v2/https").Callab
 /** Deterministic minor detection: under 18 on 31 Dec of the DOB year's Jan 1? Use exact date. */
 export declare function isUnder18(dob: string): boolean;
 /** Sync custom claims whenever the users/{uid} document is created. */
-export declare const syncClaimsOnUserCreated: import("firebase-functions/core").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
+export declare const syncClaimsOnUserCreated: import("firebase-functions").CloudFunction<import("firebase-functions/v2/firestore").FirestoreEvent<import("firebase-functions/v2/firestore").QueryDocumentSnapshot | undefined, {
     userId: string;
 }>>;

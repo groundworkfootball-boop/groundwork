@@ -23,6 +23,7 @@ const PRIORITY_TONE = {
 } as const;
 
 const DISMISS_KEY = 'gw:dismissed-recommendations';
+const AI_UNAVAILABLE_KEY = 'gw:ai-callable-unavailable';
 
 function loadDismissed(): string[] {
   try {
@@ -62,6 +63,15 @@ export const RecommendationsPage = () => {
       console.warn('[recommendations] profile read failed', err);
     }
 
+    // Skip the callable for the rest of the session once it is known to be
+    // undeployed, so we do not hammer a 404 on every navigation.
+    if (sessionStorage.getItem(AI_UNAVAILABLE_KEY) === '1') {
+      setRecommendations(deriveRecommendations(player));
+      setSource('signals');
+      setLoading(false);
+      return;
+    }
+
     try {
       const callable = httpsCallable<
         Record<string, never>,
@@ -83,6 +93,11 @@ export const RecommendationsPage = () => {
       // Functions may not be deployed yet. Degrade gracefully to the
       // deterministic signal-based suggestions instead of erroring.
       console.warn('[recommendations] AI callable unavailable, using signals', err);
+      try {
+        sessionStorage.setItem(AI_UNAVAILABLE_KEY, '1');
+      } catch {
+        /* storage may be unavailable */
+      }
       setRecommendations(deriveRecommendations(player));
       setSource('signals');
     } finally {

@@ -8,12 +8,14 @@ import {
   sendEmailVerification,
   GoogleAuthProvider,
   signInWithPopup,
+  createUserWithEmailAndPassword,
   type User as FirebaseUser,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../lib/firebase';
 import { saveRememberedAccount, setActiveSession, clearActiveSession } from '../lib/sessionStorage';
+import { generateClubCode } from '../lib/clubCode';
 
 export type Role = 'player' | 'guardian' | 'club' | 'admin';
 
@@ -69,6 +71,109 @@ function normaliseRole(value: unknown): Role | null {
   return typeof value === 'string' && (VALID_ROLES as string[]).includes(value) ? (value as Role) : null;
 }
 
+/** Age check used only for the client-side provisioning fallback. */
+function isUnder18(dob: string): boolean {
+  const birth = new Date(dob);
+  if (Number.isNaN(birth.getTime())) return false;
+  const eighteenth = new Date(birth.getFullYear() + 18, birth.getMonth(), birth.getDate());
+  return Date.now() < eighteenth.getTime();
+}
+/**
+ * Client-side provisioning used only when the createAccount callable is not
+ * deployed. Firestore rules pin every server-owned field to a safe default, so
+ * this path can never self-verify, self-grant a boost, or expose a youth profile.
+ */
+async function provisionSelf(
+  uid: string,
+  email: string,
+  name: string,
+  role: Exclude<Role, 'admin'>,
+  extra: RegisterExtra,
+): Promise<void> {
+  const isYouth = Boolean(extra.isYouth && extra.dob && isUnder18(extra.dob));
+
+  await setDoc(doc(db, 'users', uid), {
+    uid,
+    email,
+    name,
+    role,
+    emailVerified: false,
+    disabled: false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  if (role === 'player') {
+    await setDoc(doc(db, 'players', uid), {
+      uid,
+      email,
+      name,
+      displayName: name,
+      role: 'player',
+      isYouth,
+      searchable: false,
+      consentStatus: isYouth ? 'pending' : 'n/a',
+      profileCompleteness: 0,
+      dob: extra.dob ?? null,
+      positions: extra.positions ?? [],
+      playingLevel: extra.playingLevel ?? null,
+      region: extra.region ?? null,
+      availability: extra.availability ?? [],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      updatedAtMs: Date.now(),
+    });
+
+    if (isYouth) {
+      await setDoc(doc(db, 'youthProfiles', uid), {
+        playerId: uid,
+        guardianName: extra.guardianName ?? '',
+        guardianEmail: extra.guardianEmail ?? '',
+        relationship: extra.guardianRelationship ?? '',
+        consentStatus: 'pending',
+        searchable: false,
+        privacyNoticeVersion: '1.0',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+    return;
+  }
+
+  if (role === 'guardian') {
+    await setDoc(doc(db, 'guardians', uid), {
+      uid,
+      email,
+      name,
+      role: 'guardian',
+      linkedYouthIds: [],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    return;
+  }
+
+  await setDoc(doc(db, 'clubs', uid), {
+    uid,
+    email,
+    name,
+    role: 'club',
+    clubCode: generateClubCode(name),
+    verificationStatus: 'pending',
+    verifiedAdult: false,
+    verifiedYouth: false,
+    targetPositions: [],
+    targetPlayingLevels: [],
+    league: extra.league ?? null,
+    region: extra.region ?? null,
+    clubType: extra.clubType ?? null,
+    preferredRadiusKm: extra.preferredRadiusKm ?? null,
+    trainingAvailability: [],
+    trialAvailability: [],
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+}
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [role, setRole] = useState<Role | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -208,7 +313,34 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       { uid: string; role: string; isYouth: boolean; clubCode?: string }
     >(functions, 'createAccount');
 
-    await createAccount({ email, password: pass, role: selectedRole, name, extra });
+    let provisionedServerSide = true;
+    try {
+      await createAccount({ email, password: pass, role: selectedRole, name, extra });
+    } catch (err) {
+      const code = (err as { code?: string })?.code ?? '';
+      // The callable is the authoritative path. If it is not deployed yet we fall
+      // back to client-side provisioning, which Firestore rules restrict to the
+      // caller's own document, non-privileged roles, and safe default fields.
+      const unavailable =
+        code === 'functions/not-found' ||
+        code === 'functions/unavailable' ||
+        code === 'functions/internal' ||
+        code === 'functions/deadline-exceeded';
+      if (!unavailable) throw err;
+      provisionedServerSide = false;
+    }
+
+    if (!provisionedServerSide) {
+      const credential = await createUserWithEmailAndPassword(auth, email, pass);
+      await provisionSelf(credential.user.uid, email, name, selectedRole, extra);
+      await credential.user.getIdToken(true);
+      if (!credential.user.emailVerified) {
+        sendEmailVerification(credential.user).catch(() => {
+          /* non-blocking: user can resend from the verify screen */
+        });
+      }
+      return;
+    }
 
     // Sign in with the freshly provisioned credentials so the client picks up claims.
     const credential = await signInWithEmailAndPassword(auth, email, pass);
