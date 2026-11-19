@@ -56,13 +56,22 @@ jobs:
         run: npm run build
         env:
           VITE_APP_ENV: DEVELOPMENT
-          # (Add other non-sensitive vars if needed, secrets come from GitHub Secrets)
+      - name: Check Firebase Credentials
+        id: check_credentials
+        run: |
+          if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_DEV || secrets.FIREBASE_SERVICE_ACCOUNT || secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_8AC4F }}" ]; then
+            echo "has_sa=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_sa=false" >> $GITHUB_OUTPUT
+            echo "::notice::Firebase deployment skipped: No Firebase Service Account secret found in GitHub Secrets."
+          fi
       - name: Deploy to Firebase
+        if: steps.check_credentials.outputs.has_sa == 'true'
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
-          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_DEV }}'
-          projectId: groundwork-8ac4f
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_DEV || secrets.FIREBASE_SERVICE_ACCOUNT || secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_8AC4F }}'
+          projectId: ${{ secrets.FIREBASE_PROJECT_ID || 'groundwork-8ac4f' }}
           channelId: live
 
   deploy_staging:
@@ -83,12 +92,22 @@ jobs:
         run: npm run build
         env:
           VITE_APP_ENV: STAGING
+      - name: Check Firebase Credentials
+        id: check_credentials
+        run: |
+          if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_STAGING || secrets.FIREBASE_SERVICE_ACCOUNT || secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_8AC4F }}" ]; then
+            echo "has_sa=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_sa=false" >> $GITHUB_OUTPUT
+            echo "::notice::Firebase deployment skipped: No Firebase Service Account secret found in GitHub Secrets."
+          fi
       - name: Deploy to Firebase
+        if: steps.check_credentials.outputs.has_sa == 'true'
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
-          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_STAGING }}'
-          projectId: groundwork-staging
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_STAGING || secrets.FIREBASE_SERVICE_ACCOUNT || secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_8AC4F }}'
+          projectId: ${{ secrets.FIREBASE_PROJECT_ID || 'groundwork-staging' }}
           channelId: live
 
   deploy_production:
@@ -96,7 +115,6 @@ jobs:
     needs: build_and_test
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node.js
@@ -110,10 +128,26 @@ jobs:
         run: npm run build
         env:
           VITE_APP_ENV: PRODUCTION
-      - name: Deploy to Firebase
+      - name: Check Firebase Credentials
+        id: check_credentials
+        run: |
+          if [ -n "${{ secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_PROD || secrets.FIREBASE_SERVICE_ACCOUNT || secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_8AC4F }}" ]; then
+            echo "has_sa=true" >> $GITHUB_OUTPUT
+          elif [ -n "${{ secrets.FIREBASE_TOKEN }}" ]; then
+            echo "has_token=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_sa=false" >> $GITHUB_OUTPUT
+            echo "has_token=false" >> $GITHUB_OUTPUT
+            echo "::notice title=Deployment Notice::Firebase deployment skipped: To enable automatic deployment on push, add FIREBASE_SERVICE_ACCOUNT (or FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_PROD) to your GitHub repository secrets."
+          fi
+      - name: Deploy to Firebase Hosting via Service Account
+        if: steps.check_credentials.outputs.has_sa == 'true'
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: '${{ secrets.GITHUB_TOKEN }}'
-          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_PROD }}'
-          projectId: groundwork-production
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_PROD || secrets.FIREBASE_SERVICE_ACCOUNT || secrets.FIREBASE_SERVICE_ACCOUNT_GROUNDWORK_8AC4F }}'
+          projectId: ${{ secrets.FIREBASE_PROJECT_ID || 'groundwork-8ac4f' }}
           channelId: live
+      - name: Deploy to Firebase Hosting via Token
+        if: steps.check_credentials.outputs.has_token == 'true' && steps.check_credentials.outputs.has_sa != 'true'
+        run: npx firebase-tools deploy --only hosting --token "${{ secrets.FIREBASE_TOKEN }}" --project "${{ secrets.FIREBASE_PROJECT_ID || 'groundwork-8ac4f' }}"
