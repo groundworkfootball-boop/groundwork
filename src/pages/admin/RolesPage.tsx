@@ -1,9 +1,9 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
-import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
+import { collection, getDocs, limit, orderBy, query, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { ShieldCheck, Search, Users, Loader2, AlertCircle, RefreshCw, Check } from 'lucide-react';
 import { db, functions } from '../../lib/firebase';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth, type Role } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
@@ -88,8 +88,25 @@ export const RolesPage = () => {
       const { data } = await callable({ uid });
       setClaims({ role: data.role, flags: data.flags ?? {} });
     } catch (err) {
-      console.error('[roles] claims read failed', err);
-      toastError('Could not read authoritative claims for this user.');
+      console.info('[RolesPage] Cloud Function not deployed (Free Spark Plan) - reading user role directly from Firestore:', err);
+      try {
+        const uSnap = await getDoc(doc(db, 'users', uid));
+        if (uSnap.exists()) {
+          const uData = uSnap.data();
+          setClaims({
+            role: (uData.role as Role) ?? null,
+            flags: {
+              isSuperAdmin: Boolean(uData.isSuperAdmin),
+              isModerator: Boolean(uData.isModerator),
+              isSafeguardingAdmin: Boolean(uData.isSafeguardingAdmin),
+              isFinanceAdmin: Boolean(uData.isFinanceAdmin),
+            },
+          });
+        }
+      } catch (dbErr) {
+        console.error('[roles] claims read failed', dbErr);
+        toastError('Could not read role data for this user.');
+      }
     } finally {
       setClaimsLoading(false);
     }
@@ -114,8 +131,22 @@ export const RolesPage = () => {
       success('Role updated. The user must sign in again for claims to take effect.');
       setUsers((prev) => prev.map((u) => (u.id === selected.id ? { ...u, role: claims.role ?? u.role } : u)));
     } catch (err) {
-      console.error('[roles] save failed', err);
-      toastError('Could not update this role.');
+      console.info('[RolesPage] Cloud Function not deployed (Free Spark Plan) - updating user document directly in Firestore:', err);
+      try {
+        await updateDoc(doc(db, 'users', selected.id), {
+          role: claims.role,
+          isSuperAdmin: Boolean(claims.flags.isSuperAdmin),
+          isModerator: Boolean(claims.flags.isModerator),
+          isSafeguardingAdmin: Boolean(claims.flags.isSafeguardingAdmin),
+          isFinanceAdmin: Boolean(claims.flags.isFinanceAdmin),
+          updatedAt: serverTimestamp(),
+        });
+        success('Role updated in Firestore user record.');
+        setUsers((prev) => prev.map((u) => (u.id === selected.id ? { ...u, role: claims.role ?? u.role } : u)));
+      } catch (dbErr) {
+        console.error('[roles] save failed', dbErr);
+        toastError('Could not update this role.');
+      }
     } finally {
       setSaving(false);
     }

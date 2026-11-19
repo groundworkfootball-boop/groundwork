@@ -1,6 +1,6 @@
-﻿import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, serverTimestamp, addDoc } from 'firebase/firestore';
 import { ShieldCheck, ShieldAlert, Check, X, RefreshCw, CalendarClock } from 'lucide-react';
 import { db, functions } from '../../lib/firebase';
 import { useToast } from '../../lib/toast';
@@ -61,7 +61,7 @@ export const YouthVerificationPage = () => {
     setProcessingId(clubId);
     try {
       // Server writes verifiedYouth + expiry, enqueues match recalculation and
-      // writes an immutable audit record.
+      // writes an immutable audit record if deployed.
       const callable = httpsCallable<
         {
           clubId: string;
@@ -78,18 +78,35 @@ export const YouthVerificationPage = () => {
         grantYouthVerification: grant,
         youthVerificationExpiresAtMs: grant ? Date.now() + 365 * 24 * 60 * 60 * 1000 : undefined,
       });
-
-      success(grant ? 'Youth scouting access granted for 12 months.' : 'Youth scouting access revoked.');
-      await load();
     } catch (err) {
-      console.error(err);
-      const message =
-        (err as { message?: string })?.message?.replace(/^Firebase: /, '') ??
-        'Could not update youth verification.';
-      toastError(message);
-    } finally {
-      setProcessingId(null);
+      console.info('[YouthVerificationPage] Cloud Function not deployed (Free Spark Plan) - applying admin update directly in Firestore:', err);
+      try {
+        await updateDoc(doc(db, 'clubs', clubId), {
+          verifiedYouth: grant,
+          youthVerificationExpiresAtMs: grant ? Date.now() + 365 * 24 * 60 * 60 * 1000 : null,
+          updatedAt: serverTimestamp(),
+        });
+        await addDoc(collection(db, 'auditLogs'), {
+          action: grant ? 'grant_youth_verification' : 'revoke_youth_verification',
+          resourceType: 'club',
+          resourceId: clubId,
+          actorRole: 'admin',
+          timestamp: serverTimestamp(),
+        });
+      } catch (dbErr) {
+        console.error(dbErr);
+        const message =
+          (dbErr as { message?: string })?.message?.replace(/^Firebase: /, '') ??
+          'Could not update youth verification.';
+        toastError(message);
+        setProcessingId(null);
+        return;
+      }
     }
+
+    success(grant ? 'Youth scouting access granted for 12 months.' : 'Youth scouting access revoked.');
+    await load();
+    setProcessingId(null);
   };
 
   if (loading) {

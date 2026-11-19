@@ -88,10 +88,10 @@ export const ShortlistsPage = () => {
                 </div>
 
                 <Link
-                  to="/dashboard/opportunities"
+                  to={`/dashboard/opportunities/${item.id}`}
                   className="bg-brand hover:bg-brand-hover text-black font-bold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1 transition-all shadow-md shadow-brand/10"
                 >
-                  <span>Apply Now</span>
+                  <span>View Details</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </div>

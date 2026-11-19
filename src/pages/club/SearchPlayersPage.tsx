@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Search, MapPin, Star, Send, Loader2, AlertCircle, User, X, CheckCircle2, Eye } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
@@ -25,13 +25,14 @@ interface OpportunityDoc {
 export const SearchPlayersPage = () => {
   const { user, role } = useAuth();
   const { success, error: toastError } = useToast();
+  const [searchParams] = useSearchParams();
   
   const [players, setPlayers] = useState<PlayerDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   
   const [searchTerm, setSearchTerm] = useState('');
-  const [positionFilter, setPositionFilter] = useState('');
+  const [positionFilter, setPositionFilter] = useState(searchParams.get('position') || '');
   
   // Invite Modal State
   const [invitingPlayer, setInvitingPlayer] = useState<PlayerDoc | null>(null);

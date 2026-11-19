@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, MapPin, Eye, EyeOff, Edit2, Save, X, Camera, Plus, Trash2, Loader2, AlertCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../lib/toast';
 import { db } from '../lib/firebase';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { uploadProfilePhoto, validateImageFile, CLOUDINARY_CLOUD_NAME } from '../lib/cloudinary';
 
 interface ExperienceEntry {
   id: number;
@@ -29,6 +30,8 @@ interface PlayerProfileData {
   searchable?: boolean;
   isYouth?: boolean;
   consentStatus?: string;
+  photoUrl?: string;
+  photoPublicId?: string;
   [key: string]: unknown;
 }
 
@@ -47,6 +50,7 @@ function computeCompleteness(data: PlayerProfileData): number {
   if (data.avgMinsPlayed) score += 5;
   if (data.ageGroup) score += 5;
   if (data.searchable !== undefined) score += 5;
+  if (data.photoUrl) score += 5;
   return Math.min(score / 100, 1);
 }
 
@@ -60,6 +64,8 @@ export const Profile = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [profileData, setProfileData] = useState<PlayerProfileData>({});
   const [editForm, setEditForm] = useState<PlayerProfileData>({});
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -127,6 +133,50 @@ export const Profile = () => {
       ...prev,
       experience: [{ id: Date.now(), period: '', team: '', league: '' }, ...(prev.experience ?? [])],
     }));
+
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user?.uid) return;
+
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      toastError(validation.error || 'Invalid image file.');
+      return;
+    }
+
+    if (!CLOUDINARY_CLOUD_NAME) {
+      toastError('Cloudinary is not configured. Please add VITE_CLOUDINARY_CLOUD_NAME.');
+      return;
+    }
+
+    setUploadingPhoto(true);
+    try {
+      const res = await uploadProfilePhoto(file, user.uid);
+      setEditForm((prev) => ({
+        ...prev,
+        photoUrl: res.secureUrl,
+        photoPublicId: res.publicId,
+      }));
+      setProfileData((prev) => ({
+        ...prev,
+        photoUrl: res.secureUrl,
+        photoPublicId: res.publicId,
+      }));
+      const collection = role === 'club' ? 'clubs' : 'players';
+      await setDoc(
+        doc(db, collection, user.uid),
+        { photoUrl: res.secureUrl, photoPublicId: res.publicId, updatedAt: serverTimestamp() },
+        { merge: true }
+      );
+      success('Profile photo updated successfully!');
+    } catch (err) {
+      console.error('Photo upload error:', err);
+      toastError((err as Error)?.message || 'Failed to upload photo to Cloudinary.');
+    } finally {
+      setUploadingPhoto(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const removeExp = (id: number) =>
     setEditForm((prev) => ({
@@ -216,17 +266,48 @@ export const Profile = () => {
 
             <div className="flex flex-col sm:flex-row justify-between items-start gap-6 relative z-10">
               <div className="flex flex-col sm:flex-row items-start sm:items-center space-y-4 sm:space-y-0 sm:space-x-6 w-full">
-                {/* Avatar */}
+                {/* Avatar with Cloudinary Upload */}
                 <div className="relative group w-28 h-28 bg-dark-bg border-2 border-dark-border rounded-lg overflow-hidden shrink-0 shadow-xl self-center sm:self-auto">
-                  <div className="w-full h-full bg-gradient-to-br from-dark-border to-dark-bg flex items-center justify-center">
-                    <span className="text-4xl font-black text-text-secondary">
-                      {(displayData.name || user?.name || 'U').charAt(0).toUpperCase()}
-                    </span>
-                  </div>
-                  {isEditing && (
-                    <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
-                      <Camera className="w-8 h-8 text-white mb-1" />
-                      <span className="text-[10px] font-bold text-white uppercase tracking-wider">Change</span>
+                  {displayData.photoUrl ? (
+                    <img
+                      src={displayData.photoUrl}
+                      alt={displayData.name || 'User'}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-dark-border to-dark-bg flex items-center justify-center">
+                      <span className="text-4xl font-black text-text-secondary">
+                        {(displayData.name || user?.name || 'U').charAt(0).toUpperCase()}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Hidden file input */}
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handlePhotoSelect}
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                  />
+
+                  {/* Change photo button */}
+                  {canEdit && (
+                    <div
+                      onClick={() => !uploadingPhoto && fileInputRef.current?.click()}
+                      className={`absolute inset-0 bg-black/60 flex flex-col items-center justify-center transition-opacity cursor-pointer ${
+                        uploadingPhoto ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                      }`}
+                      title="Upload photo via Cloudinary"
+                    >
+                      {uploadingPhoto ? (
+                        <Loader2 className="w-6 h-6 text-brand animate-spin mb-1" />
+                      ) : (
+                        <Camera className="w-6 h-6 text-white mb-1" />
+                      )}
+                      <span className="text-[10px] font-bold text-white uppercase tracking-wider">
+                        {uploadingPhoto ? 'Uploading...' : 'Change'}
+                      </span>
                     </div>
                   )}
                 </div>

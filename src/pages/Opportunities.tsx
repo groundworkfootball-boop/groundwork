@@ -1,4 +1,4 @@
-﻿import { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Search,
@@ -293,19 +293,27 @@ export const Opportunities = () => {
                         })
                       : 'Open'}
                   </span>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() =>
-                      setApplyingTo({
-                        id: opportunity.id,
-                        title: opportunity.title,
-                        clubId: opportunity.clubId,
-                      })
-                    }
-                  >
-                    Apply
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Link
+                      to={`/dashboard/opportunities/${opportunity.id}`}
+                      className="rounded-lg border border-white/[0.10] px-2.5 py-1.5 text-[11.5px] font-medium text-slate-300 transition-colors hover:bg-white/[0.06]"
+                    >
+                      Details
+                    </Link>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() =>
+                        setApplyingTo({
+                          id: opportunity.id,
+                          title: opportunity.title,
+                          clubId: opportunity.clubId,
+                        })
+                      }
+                    >
+                      Apply
+                    </Button>
+                  </div>
                 </div>
               </Card>
             ))}

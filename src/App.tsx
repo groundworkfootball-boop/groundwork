@@ -1,7 +1,7 @@
-﻿import { lazy, Suspense } from 'react';
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
-import { ToastProvider } from './lib/toast';
+import { AppProviders } from './app/providers';
+import { useAuth } from './context/AuthContext';
 import { DashboardShell } from './components/layout/DashboardShell';
 import { Loader2 } from 'lucide-react';
 
@@ -29,6 +29,7 @@ const NotFound = lazy(() => import('./pages/NotFound').then((m) => ({ default: m
 const PlayerProfilePage = lazy(() => import('./pages/player/ProfilePage').then((m) => ({ default: m.ProfilePage })));
 const ProfileBuilderPage = lazy(() => import('./pages/player/ProfileBuilderPage').then((m) => ({ default: m.ProfileBuilderPage })));
 const PlayerOpportunitiesPage = lazy(() => import('./pages/player/OpportunitiesPage').then((m) => ({ default: m.OpportunitiesPage })));
+const OpportunityDetailsPage = lazy(() => import('./pages/player/OpportunityDetailsPage').then((m) => ({ default: m.OpportunityDetailsPage })));
 const PlayerApplicationsPage = lazy(() => import('./pages/player/ApplicationsPage').then((m) => ({ default: m.ApplicationsPage })));
 const PlayerShortlistsPage = lazy(() => import('./pages/player/ShortlistsPage').then((m) => ({ default: m.ShortlistsPage })));
 const PlayerVideosPage = lazy(() => import('./pages/player/VideosPage').then((m) => ({ default: m.VideosPage })));
@@ -107,11 +108,10 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
 
 function App() {
   return (
-    <ToastProvider>
-      <AuthProvider>
-        <BrowserRouter>
-          <Suspense fallback={<FullPageLoader />}>
-            <Routes>
+    <AppProviders>
+      <BrowserRouter>
+        <Suspense fallback={<FullPageLoader />}>
+          <Routes>
               {/* Public */}
               <Route path="/" element={<LandingPage />} />
               <Route path="/about" element={<AboutPage />} />
@@ -144,6 +144,8 @@ function App() {
 
                 {/* Player */}
                 <Route path="opportunities" element={<PlayerOpportunitiesPage />} />
+                <Route path="opportunities/:id" element={<OpportunityDetailsPage />} />
+                <Route path="opportunity/:id" element={<OpportunityDetailsPage />} />
                 <Route path="shortlist" element={<PlayerShortlistsPage />} />
                 <Route path="applications" element={<PlayerApplicationsPage />} />
                 <Route path="profile" element={<PlayerProfilePage />} />
@@ -218,10 +220,9 @@ function App() {
             </Routes>
           </Suspense>
         </BrowserRouter>
-      </AuthProvider>
-    </ToastProvider>
-  );
-}
+      </AppProviders>
+    );
+  }
 
 export default App;
 

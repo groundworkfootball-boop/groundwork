@@ -1,7 +1,8 @@
-﻿import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
+import { doc, getDoc, setDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { AlertCircle, Save, RefreshCw, Info, Sliders, History } from 'lucide-react';
-import { functions } from '../../lib/firebase';
+import { db, functions } from '../../lib/firebase';
 import { useToast } from '../../lib/toast';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card, CardHeader } from '../../components/ui/Card';
@@ -77,8 +78,25 @@ export const MatchingConfigPage = () => {
       }
       setHistory(data.versions ?? []);
     } catch (err) {
-      console.error(err);
-      setError('We could not load the matching configuration. Admin access is required.');
+      console.info('[MatchingConfigPage] Cloud Function not deployed (Free Spark Plan) - loading from Firestore matchingConfigs/default:', err);
+      try {
+        const snap = await getDoc(doc(db, 'matchingConfigs', 'default'));
+        if (snap.exists()) {
+          const d = snap.data();
+          setVersion(d.version || 1);
+          setPct({
+            positionWeight: Math.round((d.positionWeight ?? 0.3) * 100),
+            levelWeight: Math.round((d.levelWeight ?? 0.2) * 100),
+            attributesWeight: Math.round((d.attributesWeight ?? 0.2) * 100),
+            distanceWeight: Math.round((d.distanceWeight ?? 0.15) * 100),
+            availabilityWeight: Math.round((d.availabilityWeight ?? 0.1) * 100),
+            boostWeight: Math.round((d.boostWeight ?? 0.05) * 100),
+          });
+        }
+      } catch (dbErr) {
+        console.error(dbErr);
+        setError('We could not load the matching configuration. Admin access is required.');
+      }
     } finally {
       setLoading(false);
     }
@@ -115,17 +133,43 @@ export const MatchingConfigPage = () => {
 
       if (data.error) {
         toastError(data.error);
+        setSaving(false);
         return;
       }
 
       success(`Configuration saved as version ${data.version}. Recalculation queued.`);
       await load();
     } catch (err) {
-      console.error(err);
-      const message =
-        (err as { message?: string })?.message?.replace(/^Firebase: /, '') ??
-        'Could not save the configuration.';
-      toastError(message);
+      console.info('[MatchingConfigPage] Cloud Function not deployed (Free Spark Plan) - writing directly to Firestore matchingConfigs/default:', err);
+      try {
+        const nextVersion = version + 1;
+        const payload = {
+          positionWeight: pct.positionWeight / 100,
+          levelWeight: pct.levelWeight / 100,
+          attributesWeight: pct.attributesWeight / 100,
+          distanceWeight: pct.distanceWeight / 100,
+          availabilityWeight: pct.availabilityWeight / 100,
+          boostWeight: pct.boostWeight / 100,
+          version: nextVersion,
+          updatedAt: serverTimestamp(),
+        };
+
+        await setDoc(doc(db, 'matchingConfigs', 'default'), payload, { merge: true });
+        await addDoc(collection(db, 'matchingConfigVersions'), {
+          ...payload,
+          createdAt: serverTimestamp(),
+        });
+
+        setVersion(nextVersion);
+        success(`Configuration saved as version ${nextVersion}.`);
+        await load();
+      } catch (dbErr) {
+        console.error(dbErr);
+        const message =
+          (dbErr as { message?: string })?.message?.replace(/^Firebase: /, '') ??
+          'Could not save the configuration.';
+        toastError(message);
+      }
     } finally {
       setSaving(false);
     }

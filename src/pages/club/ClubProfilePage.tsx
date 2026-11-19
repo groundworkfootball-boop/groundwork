@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../lib/toast';
 import { db } from '../../lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import { Loader2, AlertCircle, Building2, Target, Users, MapPin, Globe, Mail, ShieldCheck } from 'lucide-react';
+import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { Loader2, AlertCircle, Building2, Target, Users, MapPin, Globe, Mail, ShieldCheck, Camera } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { uploadClubLogo, validateImageFile, CLOUDINARY_CLOUD_NAME } from '../../lib/cloudinary';
 
 const LEVELS: Record<number, string> = {
   1: 'Professional / Tier 1',
@@ -14,10 +16,51 @@ const LEVELS: Record<number, string> = {
 
 export const ClubProfilePage = () => {
   const { user } = useAuth();
+  const { success, error: toastError } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [clubData, setClubData] = useState<any>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user?.uid) return;
+
+    const validation = validateImageFile(file);
+    if (!validation.valid) {
+      toastError(validation.error || 'Invalid image file.');
+      return;
+    }
+
+    if (!CLOUDINARY_CLOUD_NAME) {
+      toastError('Cloudinary is not configured. Please add VITE_CLOUDINARY_CLOUD_NAME.');
+      return;
+    }
+
+    setUploadingLogo(true);
+    try {
+      const res = await uploadClubLogo(file, user.uid);
+      await updateDoc(doc(db, 'clubs', user.uid), {
+        logoUrl: res.secureUrl,
+        logoPublicId: res.publicId,
+        updatedAt: serverTimestamp(),
+      });
+      setClubData((prev: any) => ({
+        ...prev,
+        logoUrl: res.secureUrl,
+        logoPublicId: res.publicId,
+      }));
+      success('Club logo updated successfully!');
+    } catch (err) {
+      console.error(err);
+      toastError((err as Error)?.message || 'Failed to upload club logo.');
+    } finally {
+      setUploadingLogo(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -64,8 +107,42 @@ export const ClubProfilePage = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
         <div className="flex items-center space-x-6">
+          {/* Logo with Cloudinary upload */}
           <div className="w-24 h-24 rounded-2xl bg-dark-surface border-2 border-dark-border flex items-center justify-center shrink-0 shadow-xl overflow-hidden relative group">
-            <Building2 className="w-10 h-10 text-text-secondary" />
+            {clubData.logoUrl ? (
+              <img
+                src={clubData.logoUrl}
+                alt={clubData.name || 'Club Logo'}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <Building2 className="w-10 h-10 text-text-secondary" />
+            )}
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleLogoUpload}
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+            />
+
+            <div
+              onClick={() => !uploadingLogo && fileInputRef.current?.click()}
+              className={`absolute inset-0 bg-black/60 flex flex-col items-center justify-center transition-opacity cursor-pointer ${
+                uploadingLogo ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              }`}
+              title="Upload club crest/logo via Cloudinary"
+            >
+              {uploadingLogo ? (
+                <Loader2 className="w-6 h-6 text-brand animate-spin mb-1" />
+              ) : (
+                <Camera className="w-6 h-6 text-white mb-1" />
+              )}
+              <span className="text-[9px] font-bold text-white uppercase tracking-wider">
+                {uploadingLogo ? 'Uploading' : 'Change'}
+              </span>
+            </div>
           </div>
           <div>
             <h1 className="text-3xl sm:text-4xl font-black uppercase tracking-tight text-white flex items-center space-x-3">

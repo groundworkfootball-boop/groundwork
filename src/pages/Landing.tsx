@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
@@ -8,6 +8,7 @@ import {
   Sparkles,
   CheckCircle2,
   Play,
+  Pause,
   Lock,
   Zap,
   Users,
@@ -15,6 +16,8 @@ import {
   Sliders,
   ChevronRight,
   Star,
+  Menu,
+  X,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { ButtonLink } from '../components/ui/Button';
@@ -121,6 +124,8 @@ export const Landing = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoReady, setVideoReady] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -155,6 +160,18 @@ export const Landing = () => {
       el.removeEventListener('canplay', markReady);
     };
   }, [reducedMotion]);
+
+  const toggleVideoPlay = () => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (isPlaying) {
+      el.pause();
+      setIsPlaying(false);
+    } else {
+      el.play().catch(() => {});
+      setIsPlaying(true);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-ink-950 text-white">
@@ -203,17 +220,75 @@ export const Landing = () => {
                 </ButtonLink>
               </>
             )}
+
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen((v) => !v)}
+              className="rounded-lg p-2 text-slate-400 hover:bg-white/[0.06] hover:text-white lg:hidden"
+              aria-label={mobileMenuOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={mobileMenuOpen}
+            >
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
           </div>
         </div>
+
+        {/* Mobile menu dropdown */}
+        {mobileMenuOpen && (
+          <div className="border-t border-white/[0.08] bg-ink-950/95 px-5 py-4 backdrop-blur-2xl lg:hidden">
+            <nav className="flex flex-col space-y-1">
+              {NAV.map((item) => (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="rounded-xl px-3 py-2.5 text-[14px] font-medium text-slate-300 hover:bg-white/[0.06] hover:text-white"
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+            <div className="mt-4 flex flex-col gap-2 border-t border-white/[0.08] pt-4">
+              {isAuthenticated ? (
+                <ButtonLink to="/dashboard" size="sm" fullWidth iconRight={<ArrowRight className="h-3.5 w-3.5" />}>
+                  Dashboard
+                </ButtonLink>
+              ) : (
+                <>
+                  <Link
+                    to="/login"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full rounded-xl border border-white/10 py-2.5 text-center text-[13px] font-medium text-white hover:bg-white/5"
+                  >
+                    Sign in
+                  </Link>
+                  <ButtonLink to="/register" size="sm" fullWidth iconRight={<ArrowRight className="h-3.5 w-3.5" />}>
+                    Get started
+                  </ButtonLink>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* ── Hero ───────────────────────────────────────────────────── */}
       <section className="relative isolate flex min-h-[calc(100svh-4rem)] items-center overflow-hidden pt-16">
-        <div className="absolute inset-0 -z-10">
+        <div className="absolute inset-0 -z-10 overflow-hidden">
+          {/* Permanent stadium backdrop ensuring no black or blank frame */}
+          <img
+            src="/media/hero-poster.jpg"
+            alt="Football stadium background"
+            className="absolute inset-0 h-full w-full object-cover object-[50%_58%]"
+            aria-hidden
+          />
+
           {!reducedMotion && (
             <video
               ref={videoRef}
-              className={`h-full w-full object-cover object-[50%_58%] transition-opacity duration-1000 ${videoReady ? 'opacity-100' : 'opacity-0'}`}
+              className={`absolute inset-0 h-full w-full object-cover object-[50%_58%] transition-opacity duration-1000 ${
+                videoReady && isPlaying ? 'opacity-100' : 'opacity-0'
+              }`}
               src="/media/hero.mp4"
               poster="/media/hero-poster.jpg"
               autoPlay
@@ -225,12 +300,35 @@ export const Landing = () => {
               onLoadedData={() => setVideoReady(true)}
             />
           )}
-          {reducedMotion && (
-            <img src="/media/hero-poster.jpg" alt="" className="h-full w-full object-cover" aria-hidden />
+
+          {/* Cinematic Dark Gradient Overlays */}
+          <div className="absolute inset-0 bg-gradient-to-b from-ink-950/70 via-ink-950/35 to-ink-950 pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-r from-ink-950/95 via-ink-950/45 to-transparent pointer-events-none" />
+          <div className="absolute inset-0 gw-grid-bg opacity-[0.14] pointer-events-none" />
+
+          {/* Interactive Play/Pause Hero Motion Pill */}
+          {!reducedMotion && (
+            <div className="absolute bottom-5 right-5 z-20 hidden sm:flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleVideoPlay}
+                className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-ink-950/75 px-3 py-1.5 text-[11px] font-medium text-slate-300 backdrop-blur-md transition hover:border-brand/50 hover:text-white"
+                title={isPlaying ? 'Pause background video' : 'Play background video'}
+              >
+                {isPlaying ? (
+                  <>
+                    <Pause className="h-3 w-3 text-brand" />
+                    <span>Pause motion</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-3 w-3 text-brand" />
+                    <span>Play motion</span>
+                  </>
+                )}
+              </button>
+            </div>
           )}
-          <div className="absolute inset-0 bg-gradient-to-b from-ink-950/55 via-ink-950/25 to-ink-950" />
-          <div className="absolute inset-0 bg-gradient-to-r from-ink-950/95 via-ink-950/30 to-transparent" />
-          <div className="absolute inset-0 gw-grid-bg opacity-[0.12]" />
         </div>
 
         <div className="mx-auto w-full max-w-8xl px-5 py-16 lg:px-8 lg:py-24">

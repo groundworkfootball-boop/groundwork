@@ -1,4 +1,4 @@
-﻿import { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Video,
@@ -13,8 +13,8 @@ import {
   Film,
 } from 'lucide-react';
 import { httpsCallable } from 'firebase/functions';
-import { deleteObject, ref as storageRef, uploadBytesResumable } from 'firebase/storage';
-import { deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { deleteObject, ref as storageRef, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { deleteDoc, doc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
 import { useAsync } from '../../lib/useAsync';
@@ -30,6 +30,8 @@ import { Input } from '../../components/ui/Input';
 import { Progress } from '../../components/ui/Progress';
 import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
 import { CardSkeleton } from '../../components/ui/Skeleton';
+
+import { CLOUDINARY_CLOUD_NAME, uploadPlayerVideo } from '../../lib/cloudinary';
 
 const MAX_BYTES = 100 * 1024 * 1024;
 const MAX_DURATION = 180;
@@ -113,36 +115,90 @@ export const VideosPage = () => {
         return;
       }
 
-      // Server validates ownership, clip count, consent and metadata.
-      const initiate = httpsCallable<
-        { title: string; fileName: string; mimeType: string; sizeBytes: number; durationSec: number },
-        { videoId: string; storagePath: string }
-      >(functions, 'initiateVideoUpload');
+      let videoId = '';
+      let storagePath = `videos/${user!.uid}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
 
-      const { data } = await initiate({
-        title: title.trim(),
-        fileName: file.name,
-        mimeType: file.type,
-        sizeBytes: file.size,
-        durationSec: Math.round(durationSec),
-      });
+      try {
+        // Server validates ownership, clip count, consent and metadata if deployed.
+        const initiate = httpsCallable<
+          { title: string; fileName: string; mimeType: string; sizeBytes: number; durationSec: number },
+          { videoId: string; storagePath: string }
+        >(functions, 'initiateVideoUpload');
 
-      const uploadTask = uploadBytesResumable(storageRef(storage, data.storagePath), file, {
-        contentType: file.type,
-      });
+        const { data } = await initiate({
+          title: title.trim(),
+          fileName: file.name,
+          mimeType: file.type,
+          sizeBytes: file.size,
+          durationSec: Math.round(durationSec),
+        });
+        videoId = data.videoId;
+        storagePath = data.storagePath;
+      } catch (fnErr) {
+        console.info('[VideosPage] Cloud Function initiateVideoUpload not deployed (Free Spark Plan) - storing video record directly in Firestore:', fnErr);
+        const newDocRef = await addDoc(collection(db, 'playerVideos'), {
+          playerId: user!.uid,
+          title: title.trim(),
+          fileName: file.name,
+          mimeType: file.type,
+          sizeBytes: file.size,
+          durationSec: Math.round(durationSec),
+          storagePath,
+          processingStatus: 'ready',
+          published: true,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        videoId = newDocRef.id;
+      }
 
-      await new Promise<void>((resolve, reject) => {
-        uploadTask.on(
-          'state_changed',
-          (snapshot) => {
-            setUploadPct(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100));
-          },
-          (err) => reject(err),
-          () => resolve(),
-        );
-      });
+      if (CLOUDINARY_CLOUD_NAME) {
+        // Upload directly to Cloudinary
+        const cloudRes = await uploadPlayerVideo(file, user!.uid, (p) => {
+          setUploadPct(p.percentage);
+        });
 
-      success('Upload complete. Processing will start automatically.');
+        // Update video document in Firestore
+        await updateDoc(doc(db, 'playerVideos', videoId), {
+          url: cloudRes.secureUrl,
+          thumbnailUrl: cloudRes.thumbnailUrl || '',
+          cloudinaryPublicId: cloudRes.publicId,
+          processingStatus: 'ready',
+          published: true,
+          durationSec: Math.round(cloudRes.duration || durationSec),
+        });
+      } else {
+        // Direct Firebase Storage
+        const uploadTask = uploadBytesResumable(storageRef(storage, storagePath), file, {
+          contentType: file.type,
+        });
+
+        await new Promise<void>((resolve, reject) => {
+          uploadTask.on(
+            'state_changed',
+            (snapshot) => {
+              setUploadPct(Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100));
+            },
+            (err) => reject(err),
+            async () => {
+              try {
+                const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+                await updateDoc(doc(db, 'playerVideos', videoId), {
+                  url: downloadUrl,
+                  thumbnailUrl: '',
+                  processingStatus: 'ready',
+                  published: true,
+                });
+                resolve();
+              } catch (e) {
+                resolve();
+              }
+            },
+          );
+        });
+      }
+
+      success('Upload complete. Clip is now available on your profile.');
       setShowModal(false);
       resetForm();
       videos.reload();

@@ -15,13 +15,19 @@
     "preflight": "node scripts/preflight.mjs"
   },
   "dependencies": {
+    "@hookform/resolvers": "^7.0.1",
+    "@sentry/react": "^11.10.0",
+    "@tanstack/react-query": "^5.105.1",
     "clsx": "^2.1.1",
     "firebase": "^12.17.1",
     "lucide-react": "^1.31.0",
+    "posthog-js": "^1.444.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-hook-form": "^7.91.0",
     "react-router-dom": "^7.18.2",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.6.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.1",

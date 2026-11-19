@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, AlertCircle, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -243,6 +243,35 @@ export const LoginPage = () => {
         </svg>
         Continue with Google
       </Button>
+
+      {/* Development Quick Role Switcher */}
+      <div className="mt-6 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3.5">
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
+          Demo &amp; Testing Accounts
+        </p>
+        <div className="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            { label: 'Player', email: 'player@example.com', badge: 'text-brand border-brand/30 bg-brand/10' },
+            { label: 'Club', email: 'club@example.com', badge: 'text-sky-300 border-sky-400/30 bg-sky-400/10' },
+            { label: 'Guardian', email: 'guardian@example.com', badge: 'text-emerald-300 border-emerald-400/30 bg-emerald-400/10' },
+            { label: 'Admin', email: 'admin@example.com', badge: 'text-violet-300 border-violet-400/30 bg-violet-400/10' },
+          ].map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              onClick={() => {
+                setEmail(item.email);
+                setPassword('password123');
+                setFormError(null);
+              }}
+              className={`flex flex-col items-start rounded-xl border p-2 text-left transition hover:scale-[1.02] ${item.badge}`}
+            >
+              <span className="text-[11px] font-bold">{item.label}</span>
+              <span className="truncate text-[9.5px] opacity-75">{item.email}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="mt-6 flex items-start gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
         <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500/80" />

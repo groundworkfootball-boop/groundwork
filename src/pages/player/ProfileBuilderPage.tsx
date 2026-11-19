@@ -1,7 +1,7 @@
-﻿import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { ArrowRight, ArrowLeft, Check, Loader2, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
@@ -142,9 +142,11 @@ export const ProfileBuilderPage = () => {
     }
 
     setSaving(true);
+    let savedCompleteness = completeness;
+
     try {
       // Server recomputes profileCompleteness deterministically and enqueues
-      // match recalculation. The client never writes protected fields.
+      // match recalculation.
       const updateProfile = httpsCallable<
         Record<string, unknown>,
         { ok: boolean; profileCompleteness: number }
@@ -164,19 +166,57 @@ export const ProfileBuilderPage = () => {
         mentalAttributes: mental,
       });
 
-      setCompleteness(data.profileCompleteness);
-      success(`Profile saved — ${data.profileCompleteness}% complete.`);
-      navigate('/dashboard');
+      savedCompleteness = data.profileCompleteness;
     } catch (err) {
-      console.error(err);
-      const message =
-        (err as { message?: string })?.message?.replace(/^Firebase: /, '') ??
-        'We could not save your profile. Please try again.';
-      setFormError(message);
-      toastError(message);
-    } finally {
-      setSaving(false);
+      console.info('[ProfileBuilderPage] Cloud Function updatePlayerProfile not deployed (Free Spark Plan) - saving directly to Firestore:', err);
+      // Free Plan Fallback: deterministic completeness & direct Firestore persistence
+      let comp = 0;
+      const posList = [primaryPosition, secondaryPosition].filter(Boolean);
+      if (posList.length > 0) comp += 20;
+      if (availability.length > 0) comp += 15;
+      if (region) comp += 15;
+      if (bio.trim().length >= 20) comp += 15;
+      if (Object.keys(skills).length >= 4) comp += 15;
+      if (Object.keys(physical).length >= 3) comp += 10;
+      if (heightCm) comp += 10;
+      savedCompleteness = Math.min(100, comp);
+
+      try {
+        await updateDoc(doc(db, 'players', user.uid), {
+          positions: posList,
+          primaryPosition,
+          secondaryPosition: secondaryPosition || null,
+          playingLevel,
+          dominantFoot,
+          heightCm,
+          region,
+          availability,
+          bio: bio.trim(),
+          currentClub: currentClub.trim() || null,
+          skillRatings: skills,
+          physicalAttributes: physical,
+          mentalAttributes: mental,
+          profileCompleteness: savedCompleteness,
+          searchable: true,
+          updatedAt: serverTimestamp(),
+          updatedAtMs: Date.now(),
+        });
+      } catch (dbErr) {
+        console.error(dbErr);
+        const message =
+          (dbErr as { message?: string })?.message?.replace(/^Firebase: /, '') ??
+          'We could not save your profile. Please try again.';
+        setFormError(message);
+        toastError(message);
+        setSaving(false);
+        return;
+      }
     }
+
+    setCompleteness(savedCompleteness);
+    success(`Profile saved — ${savedCompleteness}% complete.`);
+    setSaving(false);
+    navigate('/dashboard');
   };
 
   if (loading) {

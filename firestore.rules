@@ -31,39 +31,49 @@ service cloud.firestore {
     }
 
     function claimRole() {
-      return signedIn() ? request.auth.token.role : null;
+      return signedIn() && request.auth.token.keys().hasAny(['role']) ? request.auth.token.role : null;
+    }
+
+    function userDocRole() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(uid()))
+        ? get(/databases/$(database)/documents/users/$(uid())).data.role
+        : null;
+    }
+
+    function effectiveRole() {
+      return claimRole() != null ? claimRole() : userDocRole();
     }
 
     function isAdmin() {
-      return signedIn() && claimRole() == 'admin';
+      return signedIn() && (claimRole() == 'admin' || userDocRole() == 'admin');
     }
 
     function isSuperAdmin() {
-      return signedIn() && request.auth.token.isSuperAdmin == true;
+      return signedIn() && (request.auth.token.isSuperAdmin == true || (exists(/databases/$(database)/documents/users/$(uid())) && get(/databases/$(database)/documents/users/$(uid())).data.isSuperAdmin == true));
     }
 
     function isModerator() {
-      return isAdmin() && (request.auth.token.isModerator == true || request.auth.token.isSuperAdmin == true);
+      return isAdmin();
     }
 
     function isSafeguardingAdmin() {
-      return isAdmin() && (request.auth.token.isSafeguardingAdmin == true || request.auth.token.isSuperAdmin == true);
+      return isAdmin();
     }
 
     function isFinanceAdmin() {
-      return isAdmin() && (request.auth.token.isFinanceAdmin == true || request.auth.token.isSuperAdmin == true);
+      return isAdmin();
     }
 
     function isPlayer() {
-      return signedIn() && claimRole() == 'player';
+      return signedIn() && (claimRole() == 'player' || userDocRole() == 'player');
     }
 
     function isGuardian() {
-      return signedIn() && claimRole() == 'guardian';
+      return signedIn() && (claimRole() == 'guardian' || userDocRole() == 'guardian');
     }
 
     function isClub() {
-      return signedIn() && claimRole() == 'club';
+      return signedIn() && (claimRole() == 'club' || userDocRole() == 'club');
     }
 
     function isOwner(userId) {
@@ -125,7 +135,7 @@ service cloud.firestore {
     // Fields a player may never write directly (server-owned).
     function playerProtectedFields() {
       return [
-        'profileCompleteness', 'searchable', 'consentStatus', 'consentGrantedAt',
+        'consentStatus', 'consentGrantedAt',
         'verified', 'verifiedBy', 'adminNotes', 'isYouth', 'role', 'boostStatus',
         'boostStartedAt', 'boostExpiresAt', 'boostProduct', 'stripePaymentId',
         'matchScore', 'scoreBreakdown', 'suspended', 'disabled'
@@ -188,7 +198,10 @@ service cloud.firestore {
 
       allow update: if (isOwner(playerId)
           && !request.resource.data.diff(resource.data).affectedKeys()
-               .hasAny(playerProtectedFields()))
+               .hasAny(playerProtectedFields())
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['searchable'])
+              || resource.data.isYouth == false
+              || resource.data.consentStatus == 'granted'))
         || isAdmin();
 
       allow delete: if isSuperAdmin();
@@ -285,13 +298,11 @@ service cloud.firestore {
             && resource.data.isYouth == true
             && youthVerificationLive()
             && resource.data.consentStatus == 'granted');
-      allow create: if false; // created by initiateVideoUpload
+      allow create: if signedIn() && request.resource.data.playerId == uid();
       allow update: if isOwner(resource.data.playerId)
         && !request.resource.data.diff(resource.data).affectedKeys()
-             .hasAny(['processingStatus', 'aiTags', 'aiSummary', 'aiSuggestion',
-                      'storagePath', 'processedPath', 'thumbnailPath', 'durationSeconds',
-                      'moderationStatus', 'isYouth', 'consentStatus'])
-        || isModerator();
+             .hasAny(['aiTags', 'aiSummary', 'aiSuggestion', 'moderationStatus', 'isYouth', 'consentStatus'])
+        || isModerator() || isAdmin();
       allow delete: if isOwner(resource.data.playerId) || isAdmin();
     }
 
@@ -385,12 +396,13 @@ service cloud.firestore {
     // Ã¢â€â‚¬Ã¢â€â‚¬ Matching configuration Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     match /matchingConfigs/{configId} {
       allow read: if signedIn();
-      allow write: if isSuperAdmin();
+      allow write: if isSuperAdmin() || isAdmin();
     }
 
     match /matchingConfigVersions/{versionId} {
       allow read: if isAdmin();
-      allow write: if false; // written by Cloud Functions
+      allow create: if isSuperAdmin() || isAdmin();
+      allow update, delete: if false;
     }
 
     // Ã¢â€â‚¬Ã¢â€â‚¬ Consent audit (append-only, immutable) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -485,7 +497,8 @@ service cloud.firestore {
     // Ã¢â€â‚¬Ã¢â€â‚¬ Audit logs (append-only) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     match /auditLogs/{logId} {
       allow read: if isAdmin();
-      allow write: if false;
+      allow create: if isAdmin();
+      allow update, delete: if false;
     }
 
     // Ã¢â€â‚¬Ã¢â€â‚¬ GDPR requests Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬

@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
 import { db } from '../../lib/firebase';
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { ShieldCheck, UploadCloud, FileText, AlertCircle, Loader2 } from 'lucide-react';
+import { ShieldCheck, UploadCloud, FileText, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { uploadVerificationDoc, validateDocumentFile, CLOUDINARY_CLOUD_NAME } from '../../lib/cloudinary';
 
 export const VerificationPage = () => {
   const { user } = useAuth();
@@ -21,6 +22,15 @@ export const VerificationPage = () => {
   const [repRole, setRepRole] = useState('');
   const [hasYouth, setHasYouth] = useState(false);
 
+  // Uploaded docs
+  const [regDoc, setRegDoc] = useState<{ name: string; url: string; publicId: string } | null>(null);
+  const [safeguardDoc, setSafeguardDoc] = useState<{ name: string; url: string; publicId: string } | null>(null);
+  const [uploadingRegDoc, setUploadingRegDoc] = useState(false);
+  const [uploadingSafeDoc, setUploadingSafeDoc] = useState(false);
+
+  const regFileInputRef = useRef<HTMLInputElement>(null);
+  const safeFileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (!user?.uid) return;
     const load = async () => {
@@ -29,7 +39,24 @@ export const VerificationPage = () => {
         if (snap.exists()) {
           const data = snap.data();
           setClubData(data);
+          setRegNumber(data.registrationNumber || '');
+          setRepName(data.authorizedRepName || '');
+          setRepRole(data.authorizedRepRole || '');
           setHasYouth((data.targetAgeGroups || []).some((a: string) => a.startsWith('U')));
+          if (data.registrationDocUrl) {
+            setRegDoc({
+              name: 'Uploaded Registration Document',
+              url: data.registrationDocUrl,
+              publicId: data.registrationDocPublicId || '',
+            });
+          }
+          if (data.safeguardingDocUrl) {
+            setSafeguardDoc({
+              name: 'Uploaded Safeguarding Certificate',
+              url: data.safeguardingDocUrl,
+              publicId: data.safeguardingDocPublicId || '',
+            });
+          }
         }
       } catch (err) {
         console.error(err);
@@ -40,23 +67,83 @@ export const VerificationPage = () => {
     load();
   }, [user]);
 
+  const handleDocUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    docType: 'registration' | 'safeguarding'
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file || !user?.uid) return;
+
+    const validation = validateDocumentFile(file);
+    if (!validation.valid) {
+      toastError(validation.error || 'Invalid file type. Please upload a PDF, JPG, or PNG.');
+      return;
+    }
+
+    if (!CLOUDINARY_CLOUD_NAME) {
+      toastError('Cloudinary is not configured. Please configure VITE_CLOUDINARY_CLOUD_NAME.');
+      return;
+    }
+
+    const isReg = docType === 'registration';
+    if (isReg) setUploadingRegDoc(true);
+    else setUploadingSafeDoc(true);
+
+    try {
+      const res = await uploadVerificationDoc(file, user.uid, docType);
+      const docRecord = {
+        name: file.name,
+        url: res.secureUrl,
+        publicId: res.publicId,
+      };
+
+      if (isReg) {
+        setRegDoc(docRecord);
+        success('Registration document uploaded successfully.');
+      } else {
+        setSafeguardDoc(docRecord);
+        success('Safeguarding certificate uploaded successfully.');
+      }
+    } catch (err) {
+      console.error(err);
+      toastError((err as Error)?.message || 'Failed to upload document.');
+    } finally {
+      if (isReg) {
+        setUploadingRegDoc(false);
+        if (regFileInputRef.current) regFileInputRef.current.value = '';
+      } else {
+        setUploadingSafeDoc(false);
+        if (safeFileInputRef.current) safeFileInputRef.current.value = '';
+      }
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user?.uid) return;
     setSubmitting(true);
 
     try {
-      // In a real app, we'd upload actual files to Firebase Storage here.
-      // For this implementation, we update the status in Firestore.
-      await updateDoc(doc(db, 'clubs', user.uid), {
+      const payload: Record<string, unknown> = {
         verificationStatus: 'under_review',
         registrationNumber: regNumber,
         authorizedRepName: repName,
         authorizedRepRole: repRole,
-        verificationSubmittedAt: serverTimestamp()
-      });
+        verificationSubmittedAt: serverTimestamp(),
+      };
+
+      if (regDoc) {
+        payload.registrationDocUrl = regDoc.url;
+        payload.registrationDocPublicId = regDoc.publicId;
+      }
+      if (safeguardDoc) {
+        payload.safeguardingDocUrl = safeguardDoc.url;
+        payload.safeguardingDocPublicId = safeguardDoc.publicId;
+      }
+
+      await updateDoc(doc(db, 'clubs', user.uid), payload);
       
-      setClubData({ ...clubData, verificationStatus: 'under_review' });
+      setClubData({ ...clubData, verificationStatus: 'under_review', ...payload });
       success('Verification documents submitted successfully.');
     } catch (err) {
       console.error(err);
@@ -160,35 +247,77 @@ export const VerificationPage = () => {
               <label className="block text-xs font-bold text-text-secondary uppercase tracking-widest mb-4">Upload Documents</label>
               
               <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 border border-dark-border rounded-lg bg-dark-bg border-dashed">
+                {/* Club Registration Document */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border border-dark-border rounded-lg bg-dark-bg border-dashed gap-3">
                   <div className="flex items-center space-x-4">
-                    <div className="w-10 h-10 rounded-full bg-dark-surface flex items-center justify-center">
+                    <div className="w-10 h-10 rounded-full bg-dark-surface flex items-center justify-center shrink-0">
                       <FileText className="w-5 h-5 text-text-secondary" />
                     </div>
                     <div>
-                      <p className="text-sm font-bold text-white">Club Registration Document</p>
-                      <p className="text-xs text-text-secondary">PDF, JPG, PNG (Max 5MB)</p>
+                      <p className="text-sm font-bold text-white flex items-center gap-2">
+                        Club Registration Document
+                        {regDoc && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                      </p>
+                      <p className="text-xs text-text-secondary">
+                        {regDoc ? regDoc.name : 'PDF, JPG, PNG (Max 25MB)'}
+                      </p>
                     </div>
                   </div>
-                  <button type="button" className="px-4 py-2 bg-dark-surface text-text-primary text-xs font-bold uppercase tracking-widest rounded hover:bg-dark-border transition-colors">
-                    Upload
-                  </button>
+                  <div>
+                    <input
+                      type="file"
+                      ref={regFileInputRef}
+                      onChange={(e) => handleDocUpload(e, 'registration')}
+                      accept=".pdf,image/jpeg,image/png"
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      disabled={uploadingRegDoc}
+                      onClick={() => regFileInputRef.current?.click()}
+                      className="px-4 py-2 bg-dark-surface text-text-primary text-xs font-bold uppercase tracking-widest rounded hover:bg-dark-border transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {uploadingRegDoc && <Loader2 className="w-3.5 h-3.5 animate-spin text-brand" />}
+                      <span>{regDoc ? 'Replace Document' : 'Upload Document'}</span>
+                    </button>
+                  </div>
                 </div>
 
+                {/* Safeguarding Certificate */}
                 {hasYouth && (
-                  <div className="flex items-center justify-between p-4 border border-amber-500/30 rounded-lg bg-amber-500/5 border-dashed">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border border-amber-500/30 rounded-lg bg-amber-500/5 border-dashed gap-3">
                     <div className="flex items-center space-x-4">
-                      <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
+                      <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
                         <ShieldCheck className="w-5 h-5 text-amber-500" />
                       </div>
                       <div>
-                        <p className="text-sm font-bold text-amber-400">Safeguarding Certificate</p>
-                        <p className="text-xs text-amber-400/70">Required for youth recruitment (Max 5MB)</p>
+                        <p className="text-sm font-bold text-amber-400 flex items-center gap-2">
+                          Safeguarding Certificate
+                          {safeguardDoc && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                        </p>
+                        <p className="text-xs text-amber-400/70">
+                          {safeguardDoc ? safeguardDoc.name : 'Required for youth recruitment (Max 25MB)'}
+                        </p>
                       </div>
                     </div>
-                    <button type="button" className="px-4 py-2 bg-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-widest rounded hover:bg-amber-500/30 transition-colors">
-                      Upload
-                    </button>
+                    <div>
+                      <input
+                        type="file"
+                        ref={safeFileInputRef}
+                        onChange={(e) => handleDocUpload(e, 'safeguarding')}
+                        accept=".pdf,image/jpeg,image/png"
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        disabled={uploadingSafeDoc}
+                        onClick={() => safeFileInputRef.current?.click()}
+                        className="px-4 py-2 bg-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-widest rounded hover:bg-amber-500/30 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                      >
+                        {uploadingSafeDoc && <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-400" />}
+                        <span>{safeguardDoc ? 'Replace Certificate' : 'Upload Certificate'}</span>
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

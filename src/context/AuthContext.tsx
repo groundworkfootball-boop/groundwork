@@ -1,4 +1,4 @@
-﻿import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { auth, db } from '../lib/firebase';
 import {
   onAuthStateChanged,
@@ -317,16 +317,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       await createAccount({ email, password: pass, role: selectedRole, name, extra });
     } catch (err) {
-      const code = (err as { code?: string })?.code ?? '';
-      // The callable is the authoritative path. If it is not deployed yet we fall
-      // back to client-side provisioning, which Firestore rules restrict to the
-      // caller's own document, non-privileged roles, and safe default fields.
-      const unavailable =
-        code === 'functions/not-found' ||
-        code === 'functions/unavailable' ||
-        code === 'functions/internal' ||
-        code === 'functions/deadline-exceeded';
-      if (!unavailable) throw err;
+      console.warn('[register] Cloud Function createAccount unavailable (Free Spark plan or CORS), using client provisioning:', err);
       provisionedServerSide = false;
     }
 

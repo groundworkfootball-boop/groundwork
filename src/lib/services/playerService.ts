@@ -1,4 +1,4 @@
-﻿import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { queryWithSortFallback } from '../firestoreQuery';
 import type { PlayerRecord } from '../../app/types';
@@ -119,4 +119,10 @@ export async function withdrawApplication(applicationId: string): Promise<void> 
     status: 'withdrawn',
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function getOpportunity(id: string): Promise<OpportunityItem | null> {
+  const snap = await getDoc(doc(db, 'opportunities', id));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...(snap.data() as Omit<OpportunityItem, 'id'>) };
 }

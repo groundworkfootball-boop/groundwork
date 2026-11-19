@@ -1,6 +1,6 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { Users, Eye, EyeOff, RefreshCw, Search, ShieldCheck } from 'lucide-react';
 import { db, functions } from '../../lib/firebase';
 import { useToast } from '../../lib/toast';
@@ -51,17 +51,27 @@ export const PlayersPage = () => {
       >(functions, 'adminSetPlayerVisibility');
 
       await callable({ playerId: player.id, searchable: !player.searchable });
-      success(player.searchable ? 'Player hidden from search.' : 'Player made searchable.');
-      await loadPlayers();
     } catch (err) {
-      console.error(err);
-      const message =
-        (err as { message?: string })?.message?.replace(/^Firebase: /, '') ??
-        'Could not update player visibility.';
-      toastError(message);
-    } finally {
-      setActionId(null);
+      console.info('[PlayersPage] Cloud Function not deployed (Free Spark Plan) - updating player visibility directly in Firestore:', err);
+      try {
+        await updateDoc(doc(db, 'players', player.id), {
+          searchable: !player.searchable,
+          updatedAt: serverTimestamp(),
+        });
+      } catch (dbErr) {
+        console.error(dbErr);
+        const message =
+          (dbErr as { message?: string })?.message?.replace(/^Firebase: /, '') ??
+          'Could not update player visibility.';
+        toastError(message);
+        setActionId(null);
+        return;
+      }
     }
+
+    success(player.searchable ? 'Player hidden from search.' : 'Player made searchable.');
+    await loadPlayers();
+    setActionId(null);
   };
 
   const filtered = useMemo(() => {

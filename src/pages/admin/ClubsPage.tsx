@@ -1,6 +1,6 @@
-﻿import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, serverTimestamp, addDoc } from 'firebase/firestore';
 import { Building2, ShieldCheck, Check, X, RefreshCw } from 'lucide-react';
 import { db, functions } from '../../lib/firebase';
 import { useToast } from '../../lib/toast';
@@ -60,7 +60,7 @@ export const ClubsPage = () => {
     setActionId(clubId);
     try {
       // Server writes verification state, enqueues match recalculation and
-      // writes an immutable audit record.
+      // writes an immutable audit record if deployed.
       const callable = httpsCallable<
         {
           clubId: string;
@@ -78,18 +78,38 @@ export const ClubsPage = () => {
         youthVerificationExpiresAtMs:
           decision === 'approved' && grantYouth ? Date.now() + 365 * 24 * 60 * 60 * 1000 : undefined,
       });
-
-      success(`Club ${decision}.`);
-      await loadClubs();
     } catch (err) {
-      console.error(err);
-      const message =
-        (err as { message?: string })?.message?.replace(/^Firebase: /, '') ??
-        'Could not update club verification.';
-      toastError(message);
-    } finally {
-      setActionId(null);
+      console.info('[ClubsPage] Cloud Function not deployed (Free Spark Plan) - applying admin verification directly in Firestore:', err);
+      try {
+        await updateDoc(doc(db, 'clubs', clubId), {
+          verificationStatus: decision,
+          verifiedAdult: decision === 'approved',
+          verifiedYouth: decision === 'approved' && grantYouth,
+          youthVerificationExpiresAtMs:
+            decision === 'approved' && grantYouth ? Date.now() + 365 * 24 * 60 * 60 * 1000 : null,
+          updatedAt: serverTimestamp(),
+        });
+        await addDoc(collection(db, 'auditLogs'), {
+          action: `club_verification_${decision}`,
+          resourceType: 'club',
+          resourceId: clubId,
+          actorRole: 'admin',
+          timestamp: serverTimestamp(),
+        });
+      } catch (dbErr) {
+        console.error(dbErr);
+        const message =
+          (dbErr as { message?: string })?.message?.replace(/^Firebase: /, '') ??
+          'Could not update club verification.';
+        toastError(message);
+        setActionId(null);
+        return;
+      }
     }
+
+    success(`Club ${decision}.`);
+    await loadClubs();
+    setActionId(null);
   };
 
   if (loading) {
