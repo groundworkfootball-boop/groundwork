@@ -294,6 +294,69 @@ describe.skipIf(!hasEmulator)('Firestore security rules', () => {
     await assertFails(setDoc(doc(db, 'boosts', 'club-1'), { boostStatus: 'active' }));
   });
 
+  it('lets a club read its own boost but not another club’s', async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'boosts', 'boost-1'), {
+        userId: 'club-1',
+        clubId: 'club-1',
+        packageId: '14-day',
+        status: 'active',
+      });
+    });
+
+    const owner = testEnv.authenticatedContext('club-1', { role: 'club' }).firestore();
+    const other = testEnv.authenticatedContext('club-2', { role: 'club' }).firestore();
+
+    await assertSucceeds(getDoc(doc(owner, 'boosts', 'boost-1')));
+    await assertFails(getDoc(doc(other, 'boosts', 'boost-1')));
+  });
+
+  it('queues a pending subscription request but never a granted one', async () => {
+    const db = testEnv.authenticatedContext('club-1', { role: 'club' }).firestore();
+
+    await assertSucceeds(
+      addDoc(collection(db, 'subscriptionRequests'), {
+        userId: 'club-1',
+        plan: 'standard',
+        status: 'pending',
+        source: 'client_fallback',
+      }),
+    );
+
+    await assertFails(
+      addDoc(collection(db, 'subscriptionRequests'), {
+        userId: 'club-1',
+        plan: 'standard',
+        status: 'active',
+        source: 'client_fallback',
+      }),
+    );
+  });
+
+  it('prevents a request queue from being written on behalf of another user', async () => {
+    const db = testEnv.authenticatedContext('club-1', { role: 'club' }).firestore();
+    await assertFails(
+      addDoc(collection(db, 'boostRequests'), {
+        userId: 'club-2',
+        packageId: '7-day',
+        status: 'pending',
+        source: 'client_fallback',
+      }),
+    );
+  });
+
+  it('prevents a player from filing a guardian consent request', async () => {
+    const player = testEnv.authenticatedContext('player-1', { role: 'player' }).firestore();
+    await assertFails(
+      addDoc(collection(player, 'consentRequests'), {
+        youthId: 'youth-1',
+        action: 'granted',
+        status: 'pending',
+        source: 'client_fallback',
+      }),
+    );
+  });
+
   // ── Applications ─────────────────────────────────────────────────────────
   it('allows a player to submit an application for themselves', async () => {
     const db = testEnv.authenticatedContext('player-1', { role: 'player' }).firestore();

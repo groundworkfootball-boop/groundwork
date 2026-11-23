@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
 import { db } from '../../lib/firebase';
-import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { ShieldCheck, UploadCloud, FileText, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { uploadVerificationDoc, validateDocumentFile, CLOUDINARY_CLOUD_NAME } from '../../lib/cloudinary';
+import { submitClubVerification } from '../../lib/services/paymentService';
 
 export const VerificationPage = () => {
   const { user } = useAuth();
@@ -124,30 +125,34 @@ export const VerificationPage = () => {
     setSubmitting(true);
 
     try {
-      const payload: Record<string, unknown> = {
-        verificationStatus: 'under_review',
+      const result = await submitClubVerification(user.uid, {
         registrationNumber: regNumber,
         authorizedRepName: repName,
         authorizedRepRole: repRole,
-        verificationSubmittedAt: serverTimestamp(),
-      };
+        registrationDocUrl: regDoc?.url,
+        registrationDocPublicId: regDoc?.publicId,
+        safeguardingDocUrl: safeguardDoc?.url,
+        safeguardingDocPublicId: safeguardDoc?.publicId,
+      });
 
-      if (regDoc) {
-        payload.registrationDocUrl = regDoc.url;
-        payload.registrationDocPublicId = regDoc.publicId;
-      }
-      if (safeguardDoc) {
-        payload.safeguardingDocUrl = safeguardDoc.url;
-        payload.safeguardingDocPublicId = safeguardDoc.publicId;
-      }
+      setClubData({
+        ...clubData,
+        verificationStatus: result.mode === 'callable' ? 'under_review' : 'pending',
+        registrationNumber: regNumber,
+        authorizedRepName: repName,
+        authorizedRepRole: repRole,
+        registrationDocUrl: regDoc?.url,
+        safeguardingDocUrl: safeguardDoc?.url,
+      });
 
-      await updateDoc(doc(db, 'clubs', user.uid), payload);
-      
-      setClubData({ ...clubData, verificationStatus: 'under_review', ...payload });
-      success('Verification documents submitted successfully.');
+      if (result.mode === 'callable') {
+        success('Verification submitted. An administrator will review it shortly.');
+      } else {
+        success('Documents received and queued for admin review.');
+      }
     } catch (err) {
       console.error(err);
-      toastError('Failed to submit verification.');
+      toastError((err as Error)?.message || 'Failed to submit verification.');
     } finally {
       setSubmitting(false);
     }

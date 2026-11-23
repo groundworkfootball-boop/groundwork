@@ -17,12 +17,12 @@ export function Card({ variant = 'default', padding = 'md', className, children,
   return (
     <div
       className={cn(
-        'relative rounded-2xl border border-white/[0.08]',
-        variant === 'default' && 'bg-gradient-to-b from-white/[0.045] to-white/[0.015] backdrop-blur-sm',
-        variant === 'raised' && 'bg-gradient-to-b from-ink-700/70 to-ink-850/90 shadow-lift',
-        variant === 'flat' && 'bg-ink-850/70',
+        'relative rounded-xl border border-white/[0.08]',
+        variant === 'default' && 'bg-gradient-to-b from-white/[0.042] to-white/[0.012]',
+        variant === 'raised' && 'bg-gradient-to-b from-ink-700/60 to-ink-850/90 shadow-lift',
+        variant === 'flat' && 'bg-ink-850/60',
         variant === 'interactive' &&
-          'bg-gradient-to-b from-white/[0.045] to-white/[0.015] transition-all duration-200 hover:border-brand/30 hover:from-white/[0.07] hover:shadow-[0_18px_44px_-24px_rgba(0,0,0,0.9)]',
+          'bg-gradient-to-b from-white/[0.042] to-white/[0.012] transition-all duration-200 hover:border-brand/30 hover:from-white/[0.065] hover:shadow-[0_18px_44px_-24px_rgba(0,0,0,0.9)]',
         PADDING[padding],
         className,
       )}
@@ -38,25 +38,28 @@ export function CardHeader({
   description,
   action,
   icon,
+  eyebrow,
   className,
 }: {
   title: ReactNode;
   description?: ReactNode;
   action?: ReactNode;
   icon?: ReactNode;
+  eyebrow?: ReactNode;
   className?: string;
 }) {
   return (
     <div className={cn('flex items-start justify-between gap-4', className)}>
       <div className="flex min-w-0 items-start gap-3">
         {icon && (
-          <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.05] text-brand">
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.05] text-brand">
             {icon}
           </span>
         )}
         <div className="min-w-0">
-          <h3 className="truncate text-[15px] font-semibold text-white">{title}</h3>
-          {description && <p className="mt-0.5 text-[13px] leading-relaxed text-slate-400">{description}</p>}
+          {eyebrow ? <p className="gw-mono mb-1 text-slate-500">{eyebrow}</p> : null}
+          <h3 className="truncate text-[14px] font-semibold text-white">{title}</h3>
+          {description && <p className="mt-1 text-[12.5px] leading-relaxed text-slate-400">{description}</p>}
         </div>
       </div>
       {action && <div className="shrink-0">{action}</div>}

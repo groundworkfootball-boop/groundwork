@@ -3,6 +3,7 @@ import Stripe from 'stripe';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../shared/firebaseAdmin.js';
 import { writeAuditLog } from '../shared/audit.js';
+import { BOOST_PACKAGES, activateBoost } from './boosts.js';
 
 function getStripe(): Stripe | null {
   const key = process.env.STRIPE_SECRET_KEY ?? '';
@@ -89,31 +90,50 @@ async function applySubscriptionState(sub: Stripe.Subscription): Promise<void> {
 async function applyCheckoutCompleted(session: Stripe.Checkout.Session): Promise<void> {
   const meta = metadataOf(session);
   const uid = meta.clubId ?? meta.userId;
-  if (session.mode === 'subscription' && session.subscription) {
+  const purpose = (session.metadata?.purpose as string) ?? 'one_off';
+
+  if (session.mode === 'subscription' && session.subscription && purpose !== 'boost') {
     const stripe = getStripe();
     if (stripe) {
       const sub = await stripe.subscriptions.retrieve(String(session.subscription));
       await applySubscriptionState(sub);
     }
   } else if (uid && session.payment_status === 'paid') {
-    // One-off payment (e.g. visibility boost).
+    // One-off payment (visibility boost).
+    const packageId = (session.metadata?.packageId as string) ?? '';
+    const durationDays = Number(session.metadata?.durationDays ?? 0);
+    const pkg = packageId ? BOOST_PACKAGES[packageId] : undefined;
+
     await adminDb.collection('payments').add({
       userId: uid,
+      clubId: meta.clubId ?? null,
       stripeSessionId: session.id,
       amountTotal: session.amount_total ?? 0,
       currency: session.currency ?? 'gbp',
       status: 'succeeded',
-      purpose: (session.metadata?.purpose as string) ?? 'one_off',
+      purpose,
+      packageId: packageId || null,
       createdAt: FieldValue.serverTimestamp(),
     });
+
+    // Activation is derived from the paid session, not from the client.
+    if (pkg) {
+      await activateBoost({
+        userId: uid,
+        packageId,
+        stripePaymentId: String(session.payment_intent ?? session.id),
+        durationDays: pkg.days,
+      });
+    }
   }
+
   await writeAuditLog({
     action: 'stripe_checkout_completed',
     resourceType: 'payments',
     resourceId: session.id,
     actorId: uid ?? 'system',
     actorRole: 'system',
-    metadata: { mode: session.mode },
+    metadata: { mode: session.mode, purpose },
   });
 }
 

@@ -32,6 +32,8 @@ import { Badge } from '../../components/ui/Badge';
 import { ButtonLink } from '../../components/ui/Button';
 import { Progress } from '../../components/ui/Progress';
 import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { RulesDeniedNotice } from '../../components/ui/RulesDeniedNotice';
+import { isPermissionDenied } from '../../lib/errors';
 import { DashboardSkeleton } from '../../components/ui/Skeleton';
 
 const STATUS_TONE: Record<string, 'brand' | 'emerald' | 'amber' | 'rose' | 'sky' | 'violet' | 'slate'> = {
@@ -64,6 +66,14 @@ export const ClubDashboard = () => {
 
   const loading = club.loading || matches.loading || applications.loading;
   const error = club.error || matches.error || applications.error;
+  const denied = isPermissionDenied(club.rawError)
+    || isPermissionDenied(matches.rawError)
+    || isPermissionDenied(applications.rawError);
+  const deniedResources = [
+    isPermissionDenied(matches.rawError) ? 'matchResults' : null,
+    isPermissionDenied(applications.rawError) ? 'applications' : null,
+    isPermissionDenied(club.rawError) ? 'clubs' : null,
+  ].filter((value): value is string => Boolean(value));
 
   const record = club.data;
   const verifiedAdult = record?.verifiedAdult === true;
@@ -82,7 +92,9 @@ export const ClubDashboard = () => {
   );
 
   if (loading) return <DashboardSkeleton />;
-  if (error) return <ErrorState onRetry={() => { club.reload(); matches.reload(); applications.reload(); }} />;
+  if (error && !denied) {
+    return <ErrorState onRetry={() => { club.reload(); matches.reload(); applications.reload(); }} />;
+  }
 
   const clubName = record?.name ?? user?.name ?? 'Your club';
 
@@ -103,6 +115,13 @@ export const ClubDashboard = () => {
           </>
         }
       />
+
+      {deniedResources.length > 0 && (
+        <RulesDeniedNotice
+          title="Some panels need the current security rules"
+          resource={deniedResources.join(', ')}
+        />
+      )}
 
       {/* Verification banner */}
       {!verifiedAdult && (

@@ -456,8 +456,13 @@ service cloud.firestore {
     }
 
     match /boosts/{boostId} {
-      allow read: if isOwner(boostId) || isFinanceAdmin();
-      allow write: if false;
+      allow read: if signedIn() && (
+          resource.data.userId == uid()
+          || resource.data.clubId == uid()
+          || resource.data.playerId == uid()
+        )
+        || isFinanceAdmin();
+      allow write: if false; // Cloud Functions only — activation follows payment
     }
 
     match /stripeEvents/{eventId} {
@@ -534,6 +539,44 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow create: if signedIn() && request.resource.data.userId == uid();
       allow update, delete: if false;
+    }
+
+    // ── Spark-plan request queues ────────────────────────────────────────
+    // When Cloud Functions are unavailable (free plan) the client records its
+    // intent here for an admin to reconcile. Nothing in these documents grants
+    // an entitlement: `status` is always written as 'pending' by the client and
+    // only an admin can advance it.
+
+    match /subscriptionRequests/{requestId} {
+      allow read: if isOwner(request.resource.data.userId) || isFinanceAdmin();
+      allow create: if signedIn()
+        && request.resource.data.userId == uid()
+        && request.resource.data.status == 'pending';
+      allow update, delete: if isFinanceAdmin();
+    }
+
+    match /boostRequests/{requestId} {
+      allow read: if isOwner(request.resource.data.userId) || isFinanceAdmin();
+      allow create: if signedIn()
+        && request.resource.data.userId == uid()
+        && request.resource.data.status == 'pending';
+      allow update, delete: if isFinanceAdmin();
+    }
+
+    match /consentRequests/{requestId} {
+      allow read: if isSafeguardingAdmin();
+      allow create: if isGuardian()
+        && request.resource.data.source == 'client_fallback'
+        && request.resource.data.status == 'pending';
+      allow update, delete: if isSafeguardingAdmin();
+    }
+
+    match /guardianLinkRequests/{requestId} {
+      allow read: if isSafeguardingAdmin();
+      allow create: if isGuardian()
+        && request.resource.data.source == 'client_fallback'
+        && request.resource.data.status == 'pending';
+      allow update, delete: if isSafeguardingAdmin();
     }
   }
 }

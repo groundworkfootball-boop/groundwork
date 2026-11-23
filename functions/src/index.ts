@@ -27,6 +27,11 @@ export {
   reGrantConsent,
   onConsentChange,
 } from './safeguarding/consent.js';
+export {
+  linkGuardianYouth,
+  grantConsentInApp,
+  issueConsentToken,
+} from './safeguarding/guardianLink.js';
 
 // Matching engine
 export { updateMatchingConfig, getMatchingConfigState } from './matching/configs.js';
@@ -56,6 +61,7 @@ export {
 
 // Payments (Stripe)
 export { createCheckoutSession, createBillingPortalSession } from './payments/checkout.js';
+export { createBoostCheckout, createPlayerProCheckout, adminActivateBoost } from './payments/boosts.js';
 export { stripeWebhook } from './payments/webhook.js';
 export { adminReviewClubVerification } from './clubs/adminVerification.js';
 export { adminSetPlayerVisibility } from './admin/playerVisibility.js';

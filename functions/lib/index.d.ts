@@ -1,6 +1,7 @@
 export { setUserRoleClaims, adminSetUserRole, adminGetUserClaims } from './auth/claims.js';
 export { createAccount, syncClaimsOnUserCreated } from './auth/registration.js';
 export { sendConsentInvite, grantConsent, withdrawConsent, reGrantConsent, onConsentChange, } from './safeguarding/consent.js';
+export { linkGuardianYouth, grantConsentInApp, issueConsentToken, } from './safeguarding/guardianLink.js';
 export { updateMatchingConfig, getMatchingConfigState } from './matching/configs.js';
 export { onPlayerProfileChanged, onPlayerDeleted, onClubProfileChanged, onMatchJobCreated, } from './matching/recalculate.js';
 export { updatePlayerProfile } from './players/profile.js';
@@ -9,6 +10,7 @@ export { onVideoRawUpload, onVideoObjectDeleted } from './videos/processing.js';
 export { setVideoPublished, deleteVideo, moderateVideo } from './videos/manage.js';
 export { updateClubProfile, submitVerification, reviewVerification, suspendClub, expireYouthVerifications, } from './clubs/verification.js';
 export { createCheckoutSession, createBillingPortalSession } from './payments/checkout.js';
+export { createBoostCheckout, createPlayerProCheckout, adminActivateBoost } from './payments/boosts.js';
 export { stripeWebhook } from './payments/webhook.js';
 export { adminReviewClubVerification } from './clubs/adminVerification.js';
 export { adminSetPlayerVisibility } from './admin/playerVisibility.js';

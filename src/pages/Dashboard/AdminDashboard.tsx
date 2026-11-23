@@ -24,6 +24,8 @@ import { Stat } from '../../components/ui/Stat';
 import { Badge } from '../../components/ui/Badge';
 import { ButtonLink } from '../../components/ui/Button';
 import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { RulesDeniedNotice } from '../../components/ui/RulesDeniedNotice';
+import { isPermissionDenied } from '../../lib/errors';
 import { DashboardSkeleton } from '../../components/ui/Skeleton';
 
 function formatRelative(seconds?: number): string {
@@ -41,12 +43,19 @@ export const AdminDashboard = () => {
 
   const loading = overview.loading || audits.loading;
   const error = overview.error || audits.error;
+  const deniedResources = [
+    isPermissionDenied(overview.rawError) ? 'admin overview' : null,
+    isPermissionDenied(audits.rawError) ? 'auditLogs' : null,
+  ].filter((value): value is string => Boolean(value));
+  const denied = deniedResources.length > 0;
 
   const stats = overview.data;
   const recentAudits = useMemo(() => audits.data ?? [], [audits.data]);
 
   if (loading) return <DashboardSkeleton />;
-  if (error) return <ErrorState onRetry={() => { overview.reload(); audits.reload(); }} />;
+  if (error && !denied) {
+    return <ErrorState onRetry={() => { overview.reload(); audits.reload(); }} />;
+  }
 
   return (
     <div className="space-y-6">
@@ -65,6 +74,13 @@ export const AdminDashboard = () => {
           </>
         }
       />
+
+      {denied && (
+        <RulesDeniedNotice
+          title="Some panels need the current security rules"
+          resource={deniedResources.join(', ')}
+        />
+      )}
 
       {(stats?.pendingVerifications ?? 0) > 0 && (
         <div className="flex flex-col gap-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 sm:flex-row sm:items-center sm:justify-between">

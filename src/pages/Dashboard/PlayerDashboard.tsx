@@ -4,7 +4,6 @@ import {
   Target,
   FileText,
   Video,
-  Bell,
   ArrowRight,
   Sparkles,
   Zap,
@@ -21,11 +20,13 @@ import { getPlayerRecord, listPlayerApplications, listPlayerNotifications } from
 import { listPlayerMatches } from '../../lib/services/matchingService';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card, CardHeader } from '../../components/ui/Card';
-import { Stat } from '../../components/ui/Stat';
 import { Badge } from '../../components/ui/Badge';
 import { ButtonLink } from '../../components/ui/Button';
 import { Progress, ScoreRing } from '../../components/ui/Progress';
+import { MetricStrip } from '../../components/ui/ScorePanel';
 import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { RulesDeniedNotice } from '../../components/ui/RulesDeniedNotice';
+import { isPermissionDenied } from '../../lib/errors';
 import { DashboardSkeleton } from '../../components/ui/Skeleton';
 import { cn } from '../../components/ui/cn';
 
@@ -60,6 +61,12 @@ export const PlayerDashboard = () => {
 
   const loading = player.loading || applications.loading || matches.loading;
   const error = player.error || applications.error || matches.error;
+  const deniedResources = [
+    isPermissionDenied(player.rawError) ? 'players' : null,
+    isPermissionDenied(matches.rawError) ? 'matchResults' : null,
+    isPermissionDenied(applications.rawError) ? 'applications' : null,
+  ].filter((value): value is string => Boolean(value));
+  const denied = deniedResources.length > 0;
 
   const record = player.data;
   const completeness = record?.profileCompleteness ?? record?.profileComplete ?? 0;
@@ -81,8 +88,30 @@ export const PlayerDashboard = () => {
     [applications.data],
   );
 
+  const recentNotifications = useMemo(() => (notifications.data ?? []).slice(0, 5), [notifications.data]);
+
+  // The engine exposes its six weighted dimensions; surfacing the top match's
+  // breakdown is what makes the score auditable rather than a black box.
+  const topBreakdown = useMemo(() => {
+    const best = topMatches[0];
+    const breakdown = best?.scoreBreakdown;
+    if (!best || !breakdown) return null;
+    const rows: { label: string; value: number }[] = [
+      { label: 'Position', value: breakdown.positionMatch },
+      { label: 'Distance', value: breakdown.distanceMatch },
+      { label: 'Level', value: breakdown.levelMatch },
+      { label: 'Attributes', value: breakdown.attributesMatch },
+      { label: 'Availability', value: breakdown.availabilityMatch },
+      { label: 'Boost', value: breakdown.boostMatch },
+    ].filter((row) => typeof row.value === 'number');
+    if (rows.length === 0) return null;
+    return { clubName: best.clubName ?? 'Top match', rows };
+  }, [topMatches]);
+
   if (loading) return <DashboardSkeleton />;
-  if (error) return <ErrorState onRetry={() => { player.reload(); applications.reload(); matches.reload(); }} />;
+  if (error && !denied) {
+    return <ErrorState onRetry={() => { player.reload(); applications.reload(); matches.reload(); }} />;
+  }
 
   const firstName = (record?.name ?? user?.name ?? 'Player').split(' ')[0];
 
@@ -104,6 +133,13 @@ export const PlayerDashboard = () => {
         }
       />
 
+      {denied && (
+        <RulesDeniedNotice
+          title="Some panels need the current security rules"
+          resource={deniedResources.join(', ')}
+        />
+      )}
+
       {consentPending && (
         <div className="flex flex-col gap-3 rounded-2xl border border-amber-400/25 bg-amber-400/[0.06] p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">
@@ -122,49 +158,43 @@ export const PlayerDashboard = () => {
       )}
 
       {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat
-          label="Profile completeness"
-          value={`${completeness}%`}
-          icon={<TrendingUp className="h-4 w-4" />}
-          tone={completeness >= 80 ? 'emerald' : completeness >= 50 ? 'amber' : 'rose'}
-          hint={completeness >= 80 ? 'Strong dossier' : 'Add more detail'}
-        />
-        <Stat
-          label="Club matches"
-          value={matches.data?.length ?? 0}
-          icon={<Target className="h-4 w-4" />}
-          tone="brand"
-          hint="Precomputed results"
-        />
-        <Stat
-          label="Active applications"
-          value={activeApplications}
-          icon={<FileText className="h-4 w-4" />}
-          tone="sky"
-          hint={`${applications.data?.length ?? 0} total`}
-        />
-        <Stat
-          label="Unread notifications"
-          value={unread}
-          icon={<Bell className="h-4 w-4" />}
-          tone={unread > 0 ? 'violet' : 'emerald'}
-          hint={unread > 0 ? 'Needs attention' : 'All caught up'}
-        />
-      </div>
+      <MetricStrip
+        items={[
+          {
+            label: 'Completeness',
+            value: `${completeness}%`,
+            tone: completeness >= 80 ? 'emerald' : completeness >= 50 ? 'amber' : 'rose',
+            hint: completeness >= 80 ? 'Strong dossier' : 'Add more detail',
+          },
+          { label: 'Club matches', value: matches.data?.length ?? 0, tone: 'brand', hint: 'Precomputed' },
+          {
+            label: 'Active apps',
+            value: activeApplications,
+            tone: 'sky',
+            hint: `${applications.data?.length ?? 0} total`,
+          },
+          {
+            label: 'Unread',
+            value: unread,
+            tone: unread > 0 ? 'amber' : 'emerald',
+            hint: unread > 0 ? 'Needs attention' : 'All caught up',
+          },
+        ]}
+      />
 
       <div className="grid gap-5 lg:grid-cols-3">
         {/* Profile strength */}
         <Card className="lg:col-span-1">
           <CardHeader
-            title="Dossier strength"
-            description="Deterministic completeness score"
-            icon={<TrendingUp className="h-4 w-4" />}
+            eyebrow="Dossier"
+            title="Completeness"
+            description="Deterministic score — no AI involved"
+            icon={<TrendingUp className="h-3.5 w-3.5" />}
           />
           <div className="mt-6 flex flex-col items-center">
-            <ScoreRing value={completeness} size={140} label="Complete" />
+            <ScoreRing value={completeness} size={132} label="Complete" />
           </div>
-          <div className="mt-6 space-y-3">
+          <div className="mt-6 space-y-2.5">
             {[
               { label: 'Profile photo', done: Boolean(record?.photoUrl) },
               { label: 'Positions set', done: Boolean(record?.positions?.length) },
@@ -173,11 +203,11 @@ export const PlayerDashboard = () => {
               { label: 'Video clip', done: Boolean(record?.videoCount && record.videoCount > 0) },
             ].map((item) => (
               <div key={item.label} className="flex items-center justify-between gap-3">
-                <span className="text-[12.5px] text-slate-400">{item.label}</span>
+                <span className="text-[12px] text-slate-400">{item.label}</span>
                 {item.done ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
                 ) : (
-                  <AlertCircle className="h-4 w-4 text-slate-600" />
+                  <AlertCircle className="h-3.5 w-3.5 text-slate-600" />
                 )}
               </div>
             ))}
@@ -359,6 +389,116 @@ export const PlayerDashboard = () => {
                 <ArrowRight className="h-4 w-4 shrink-0 text-slate-600 transition-transform group-hover:translate-x-0.5" />
               </Link>
             ))}
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid gap-5 lg:grid-cols-2">
+        {/* Score explainer — makes the deterministic engine auditable */}
+        <Card>
+          <CardHeader
+            eyebrow="Explainable"
+            title="Why you matched"
+            description="The six weighted dimensions behind your top score"
+            icon={<TrendingUp className="h-4 w-4" />}
+            action={
+              topBreakdown ? (
+                <Link
+                  to="/dashboard/notifications"
+                  className="text-[12px] font-semibold text-brand hover:underline"
+                >
+                  Full breakdown
+                </Link>
+              ) : undefined
+            }
+          />
+          <div className="mt-5">
+            {topBreakdown === null ? (
+              <EmptyState
+                compact
+                icon={<TrendingUp className="h-6 w-6" />}
+                title="No score breakdown yet"
+                description="Once the engine has scored you against a club, the weighted dimensions appear here."
+              />
+            ) : (
+              <>
+                <p className="mb-4 text-[12px] text-slate-500">
+                  Top result: <span className="font-medium text-slate-300">{topBreakdown.clubName}</span>
+                </p>
+                <div className="space-y-3">
+                  {topBreakdown.rows.map((row) => {
+                    const pct = Math.round(row.value * 100);
+                    return (
+                      <div key={row.label}>
+                        <div className="mb-1.5 flex items-center justify-between gap-3">
+                          <span className="text-[12px] text-slate-400">{row.label}</span>
+                          <span className="gw-numeric text-[11.5px] font-semibold text-slate-300">{pct}%</span>
+                        </div>
+                        <Progress
+                          value={pct}
+                          size="sm"
+                          tone={pct >= 80 ? 'emerald' : pct >= 55 ? 'brand' : 'amber'}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="mt-4 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+                  Computed server-side from your saved profile. AI may narrate these numbers, never
+                  change them.
+                </p>
+              </>
+            )}
+          </div>
+        </Card>
+
+        {/* Notifications — previously fetched but never shown */}
+        <Card>
+          <CardHeader
+            title="Notifications"
+            description={unread > 0 ? `${unread} unread update${unread === 1 ? '' : 's'}` : 'Status changes across your pipeline'}
+            icon={<Clock className="h-4 w-4" />}
+            action={
+              <Link to="/dashboard/notifications" className="text-[12px] font-semibold text-brand hover:underline">
+                View all
+              </Link>
+            }
+          />
+          <div className="mt-5">
+            {recentNotifications.length === 0 ? (
+              <EmptyState
+                compact
+                icon={<Clock className="h-6 w-6" />}
+                title="Nothing to catch up on"
+                description="Application updates, shortlists and trial invitations will land here."
+              />
+            ) : (
+              <ul className="space-y-2.5">
+                {recentNotifications.map((item) => (
+                  <li
+                    key={item.id}
+                    className={cn(
+                      'rounded-xl border px-3.5 py-3 transition-colors',
+                      item.read === false
+                        ? 'border-brand/20 bg-brand/[0.04]'
+                        : 'border-white/[0.07] bg-white/[0.02]',
+                    )}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="min-w-0 flex-1 text-[12.5px] font-medium leading-snug text-white">
+                        {item.title ?? 'Update'}
+                      </p>
+                      <span className="gw-mono shrink-0 text-slate-600">
+                        {formatRelative(item.createdAt?.seconds)}
+                      </span>
+                    </div>
+                    {item.body ? (
+                      <p className="mt-1 text-[11.5px] leading-relaxed text-slate-500">{item.body}</p>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </Card>
       </div>

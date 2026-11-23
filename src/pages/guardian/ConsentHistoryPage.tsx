@@ -1,136 +1,195 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
-import { db } from '../../lib/firebase';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
-import type { ConsentAuditRecord } from '../../app/types';
-import { Loader2, RefreshCw, FileCheck2, ShieldCheck } from 'lucide-react';
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { ArrowLeft, FileCheck2, Lock, ScrollText, ShieldCheck, Clock } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
+import { useAsync } from '../../lib/useAsync';
+import { listGuardianConsentAudits } from '../../lib/services/guardianService';
+import { isPermissionDenied } from '../../lib/errors';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card, CardHeader } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { ButtonLink } from '../../components/ui/Button';
+import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { CardSkeleton } from '../../components/ui/Skeleton';
+import type { ConsentAuditRecord } from '../../app/types';
+
+const ACTION_TONE = {
+  granted: 'emerald',
+  're-granted': 'brand',
+  withdrawn: 'rose',
+} as const;
+
+function formatTimestamp(seconds?: number): string {
+  if (!seconds) return '—';
+  return new Date(seconds * 1000).toLocaleString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 export const ConsentHistoryPage = () => {
   const { user } = useAuth();
-  const [history, setHistory] = useState<ConsentAuditRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const audits = useAsync(() => listGuardianConsentAudits(user!.uid), [user?.uid], {
+    enabled: Boolean(user?.uid),
+  });
 
-  useEffect(() => {
-    if (!user?.email && !user?.uid) return;
-    loadHistory();
-  }, [user?.email, user?.uid]);
-
-  const loadHistory = async () => {
-    setLoading(true);
-    try {
-      // Query consent audit trail for this guardian
-      const q = query(
-        collection(db, 'consentAudit'),
-        where('guardianId', 'in', [user?.uid, user?.email].filter(Boolean)),
-        limit(50),
-      );
-      const snap = await getDocs(q);
-      const items = snap.docs.map((d) => ({
-        id: d.id,
-        ...(d.data() as Omit<ConsentAuditRecord, 'id'>),
-      }));
-
-      // Sort client-side by timestamp if multiple criteria
-      items.sort((a, b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
-
-      setHistory(items);
-    } catch (err) {
-      console.warn('Consent audit history load:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-brand animate-spin" />
-      </div>
-    );
-  }
+  const denied = isPermissionDenied(audits.error);
+  const grouped = useMemo(() => {
+    const rows = (audits.data ?? []) as ConsentAuditRecord[];
+    return rows.reduce<Record<string, ConsentAuditRecord[]>>((acc, row) => {
+      const key = row.youthId ?? 'unknown';
+      (acc[key] ??= []).push(row);
+      return acc;
+    }, {});
+  }, [audits.data]);
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto pb-12">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 pb-12">
+      <PageHeader
+        eyebrow="Guardian portal"
+        title="Consent history"
+        description="An append-only record of every consent decision made on your linked players. Entries cannot be edited or removed."
+        breadcrumbs={[
+          { label: 'Consent centre', to: '/dashboard/guardian/consent' },
+          { label: 'History' },
+        ]}
+        actions={
+          <ButtonLink
+            to="/dashboard/guardian/consent"
+            size="sm"
+            variant="secondary"
+            iconLeft={<ArrowLeft className="h-3.5 w-3.5" />}
+          >
+            Back
+          </ButtonLink>
+        }
+      />
+
+      <div className="flex items-start gap-3 rounded-2xl border border-brand/20 bg-brand/[0.05] p-4">
+        <ScrollText className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="text-brand font-bold text-xs uppercase tracking-widest">Compliance Audit</span>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold">
-              Append-Only Ledger
-            </span>
-          </div>
-          <h1 className="text-3xl font-black uppercase text-white tracking-tight">Consent Audit History</h1>
-          <p className="text-sm text-slate-400">
-            Immutable statutory ledger of all parental consent declarations, renewals, and revocations.
+          <p className="text-[13px] font-semibold text-white">Immutable by design</p>
+          <p className="mt-0.5 text-[12.5px] leading-relaxed text-slate-400">
+            Each entry stores the action, timestamp, privacy-notice version and source. Clients cannot
+            write to this collection — only Cloud Functions and authorised administrators can, which
+            keeps the trail trustworthy.
           </p>
         </div>
-        <button
-          onClick={loadHistory}
-          className="text-xs text-slate-400 hover:text-white flex items-center gap-1.5 px-3 py-2 bg-white/5 rounded-xl border border-white/10"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span>Refresh Ledger</span>
-        </button>
       </div>
 
-      <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-6">
-        {history.length === 0 ? (
-          <div className="p-12 text-center">
-            <FileCheck2 className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-            <h3 className="text-base font-bold text-white mb-1">No Consent Audit Entries Recorded</h3>
-            <p className="text-xs text-slate-400 max-w-md mx-auto mb-4">
-              When you grant or withdraw recruitment consent for your child, statutory audit logs are written immutably to this ledger.
-            </p>
+      {audits.loading ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <CardSkeleton rows={5} />
+          <CardSkeleton rows={5} />
+        </div>
+      ) : denied ? (
+        <EmptyState
+          icon={<Lock className="h-6 w-6" />}
+          title="Consent history unavailable"
+          description="The deployed Firestore rules are older than this build. Deploy the current ruleset to read your consent trail."
+          action={
+            <code className="rounded bg-black/40 px-2 py-1 font-mono text-[11.5px] text-slate-300">
+              npm run deploy:rules
+            </code>
+          }
+        />
+      ) : audits.error ? (
+        <ErrorState
+          title="Could not load consent history"
+          description="The audit trail request failed. Please try again."
+          onRetry={audits.reload}
+        />
+      ) : (audits.data ?? []).length === 0 ? (
+        <EmptyState
+          icon={<FileCheck2 className="h-6 w-6" />}
+          title="No consent records yet"
+          description="When you grant or withdraw consent for a linked player, an immutable record appears here."
+          action={
+            <ButtonLink to="/dashboard/guardian/consent" size="sm">
+              Open consent centre
+            </ButtonLink>
+          }
+        />
+      ) : (
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <Card>
+            <CardHeader
+              title="Timeline"
+              description={`${(audits.data ?? []).length} record${(audits.data ?? []).length === 1 ? '' : 's'}`}
+              icon={<FileCheck2 className="h-4 w-4" />}
+            />
+            <ol className="mt-5 space-y-4 border-l border-white/[0.08] pl-4">
+              {Object.entries(grouped).map(([youthId, rows]) => (
+                <li key={youthId} className="relative">
+                  <span className="absolute -left-[21px] top-1.5 h-2.5 w-2.5 rounded-full border-2 border-ink-850 bg-brand" />
+                  <p className="gw-mono text-slate-500">
+                    Player {youthId.slice(0, 8)}…
+                  </p>
+                  <ul className="mt-2 space-y-2">
+                    {rows.map((row) => (
+                      <li
+                        key={row.id}
+                        className="flex flex-col gap-1.5 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Badge tone={ACTION_TONE[row.action] ?? 'slate'} dot>
+                            {row.action}
+                          </Badge>
+                          <span className="flex items-center gap-1 text-[11px] text-slate-500">
+                            <Clock className="h-3 w-3" />
+                            {formatTimestamp(row.timestamp?.seconds)}
+                          </span>
+                        </div>
+                        <span className="gw-mono text-slate-600">
+                          notice v{row.privacyNoticeVersion ?? '1.0'} · {row.source || 'portal'}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ol>
+          </Card>
+
+          <div className="space-y-4">
+            <Card variant="flat">
+              <div className="flex items-start gap-2.5">
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                <div>
+                  <p className="text-[12.5px] font-semibold text-white">What each action means</p>
+                  <ul className="mt-2.5 space-y-2 text-[11.5px] leading-relaxed text-slate-400">
+                    <li>
+                      <span className="font-semibold text-emerald-300">granted</span> — the profile may
+                      appear to clubs with live youth verification.
+                    </li>
+                    <li>
+                      <span className="font-semibold text-rose-300">withdrawn</span> — delisted
+                      immediately; media queued for deletion.
+                    </li>
+                    <li>
+                      <span className="font-semibold text-brand">re-granted</span> — consent restored
+                      after a withdrawal.
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </Card>
+
             <Link
-              to="/dashboard/guardian/consent"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-brand text-slate-950 font-black text-xs uppercase tracking-wider hover:bg-brand-hover transition-all"
+              to="/safeguarding"
+              className="block rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 transition-colors hover:border-white/[0.16]"
             >
-              <ShieldCheck className="w-4 h-4" />
-              <span>Visit Consent Center</span>
+              <p className="text-[12.5px] font-semibold text-white">Read the safeguarding policy</p>
+              <p className="mt-1 text-[11.5px] leading-relaxed text-slate-500">
+                Full detail on data retention, withdrawal and club verification.
+              </p>
             </Link>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="text-[11px] uppercase bg-white/5 text-slate-400 border-b border-white/10">
-                <tr>
-                  <th className="px-4 py-3">Statutory Action</th>
-                  <th className="px-4 py-3">Player Record ID</th>
-                  <th className="px-4 py-3">Privacy Policy</th>
-                  <th className="px-4 py-3">Source Channel</th>
-                  <th className="px-4 py-3 text-right">Recorded Timestamp</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5 font-mono">
-                {history.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-white/5 transition-colors">
-                    <td className="px-4 py-3 font-bold uppercase font-sans">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] ${
-                          entry.action === 'granted'
-                            ? 'text-emerald-400 bg-emerald-400/10 border border-emerald-400/30'
-                            : 'text-red-400 bg-red-400/10 border border-red-400/30'
-                        }`}
-                      >
-                        {entry.action}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-white truncate max-w-[140px]">{entry.youthId}</td>
-                    <td className="px-4 py-3 text-slate-400">{entry.privacyNoticeVersion || '2026.1-EN'}</td>
-                    <td className="px-4 py-3 capitalize font-sans">{entry.source?.replace('_', ' ') || 'Consent Portal'}</td>
-                    <td className="px-4 py-3 text-right text-slate-400 tabular-nums">
-                      {entry.timestamp?.seconds
-                        ? new Date(entry.timestamp.seconds * 1000).toLocaleString()
-                        : 'Recorded'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

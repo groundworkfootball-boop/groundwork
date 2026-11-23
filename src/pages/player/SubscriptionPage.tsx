@@ -1,175 +1,267 @@
-import { useState, useEffect } from 'react';
-import { useToast } from '../../lib/toast';
+import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Check, Zap, ShieldCheck, Info, Clock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { db } from '../../lib/firebase';
-import { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { Zap, Check, Loader2 } from 'lucide-react';
+import { useToast } from '../../lib/toast';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { ErrorState } from '../../components/ui/EmptyState';
+import { DashboardSkeleton } from '../../components/ui/Skeleton';
+import { BOOST_PACKAGES, getPlayerBoost, purchaseBoost, requestPlayerPro, type ActiveBoost } from '../../lib/services/paymentService';
+import { cn } from '../../components/ui/cn';
+
+const PRO_FEATURES = [
+  'Documented +5% boost dimension in scoring',
+  'Unlimited match video clips',
+  'AI-assisted observable movement tagging',
+  'Transparent six-dimension score breakdowns',
+  'Profile view read receipts from scouts',
+];
+
+const FREE_FEATURES = [
+  'Full profile and skill ratings',
+  'Deterministic opportunity feed',
+  'Unlimited direct applications',
+  'One highlight video clip',
+];
 
 export const SubscriptionPage = () => {
   const { user } = useAuth();
-  const { success, error: toastError } = useToast();
-  const [activePlan, setActivePlan] = useState<'free' | 'pro'>('free');
-  const [loading, setLoading] = useState(false);
+  const { success, error: toastError, info } = useToast();
+  const [searchParams] = useSearchParams();
 
-  useEffect(() => {
-    if (!user?.uid) return;
-    const loadPlan = async () => {
-      try {
-        const snap = await getDoc(doc(db, 'players', user.uid));
-        if (snap.exists()) {
-          const data = snap.data();
-          if (data.boostsActive || data.plan === 'pro') {
-            setActivePlan('pro');
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to load player subscription state:', err);
-      }
-    };
-    loadPlan();
-  }, [user?.uid]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [boost, setBoost] = useState<ActiveBoost | null>(null);
 
-  const handleUpgrade = async (plan: 'free' | 'pro') => {
+  const load = useCallback(async () => {
     if (!user?.uid) return;
     setLoading(true);
+    setError(null);
     try {
-      const isPro = plan === 'pro';
-      await updateDoc(doc(db, 'players', user.uid), {
-        plan,
-        boostsActive: isPro,
-        subscriptionStatus: isPro ? 'active' : 'inactive',
-        updatedAt: serverTimestamp(),
-      });
-
-      if (isPro) {
-        await addDoc(collection(db, 'payments'), {
-          playerId: user.uid,
-          amount: 999,
-          currency: 'gbp',
-          status: 'succeeded',
-          type: 'subscription',
-          product: 'Player PRO Boost',
-          createdAt: serverTimestamp(),
-        });
-      }
-
-      setActivePlan(plan);
-      success(plan === 'pro' ? 'Player Pro activated! Scouting boost applied.' : 'Reverted to free plan.');
+      setBoost(await getPlayerBoost(user.uid));
     } catch (err) {
-      toastError('Failed to process subscription update.');
+      console.error(err);
+      setError('We could not load your membership state. Please try again.');
     } finally {
       setLoading(false);
     }
+  }, [user?.uid]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    const status = searchParams.get('status');
+    if (status === 'success') success('Payment confirmed. Activation follows the Stripe webhook.');
+    if (status === 'cancelled') info('Checkout cancelled. No charge was made.');
+  }, [searchParams, success, info]);
+
+  const boostActive = boost?.boostStatus === 'active';
+
+  const handlePro = async () => {
+    if (!user?.uid) return;
+    setBusy('pro');
+    try {
+      const result = await requestPlayerPro(user.uid);
+      if (result.url) {
+        window.location.href = result.url;
+        return;
+      }
+      info(result.message);
+    } catch (err) {
+      console.error(err);
+      toastError('We could not start checkout. Please try again.');
+    } finally {
+      setBusy(null);
+    }
   };
 
+  const handleBoost = async (packageId: string) => {
+    if (!user?.uid) return;
+    setBusy(packageId);
+    try {
+      const result = await purchaseBoost(user.uid, packageId);
+      if (result.url) {
+        window.location.href = result.url;
+        return;
+      }
+      info(result.message);
+    } catch (err) {
+      console.error(err);
+      toastError('We could not start the boost checkout.');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  if (loading) return <DashboardSkeleton />;
+  if (error) return <ErrorState description={error} onRetry={load} />;
+
   return (
-    <div className="space-y-8 max-w-5xl mx-auto pb-12">
-      <div className="text-center max-w-xl mx-auto">
-        <span className="text-brand font-bold text-xs uppercase tracking-widest">Player Advancement</span>
-        <h1 className="text-3xl font-black uppercase text-white tracking-tight mt-1">Player Memberships & Boosts</h1>
-        <p className="text-sm text-slate-400 mt-2">
-          Maximize your recruiting reach and unlock detailed match breakdown analytics.
-        </p>
+    <div className="space-y-6 pb-12">
+      <PageHeader
+        eyebrow="Player advancement"
+        title="Plan & visibility"
+        description="Boosts change exactly one documented dimension — the 5% visibility weight. They can never rewrite position, level or attribute scores."
+      />
+
+      {boostActive ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand/30 bg-brand/[0.07] p-4">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-brand/30 bg-brand/12 text-brand">
+              <Zap className="h-4 w-4" />
+            </span>
+            <div>
+              <p className="text-[13px] font-semibold text-white">Visibility boost active</p>
+              <p className="text-[11.5px] text-brand/80">
+                {boost?.packageId ?? 'Boost'} · expires automatically
+              </p>
+            </div>
+          </div>
+          <Badge tone="brand" dot>
+            Live
+          </Badge>
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-[15px] font-semibold text-white">Standard player</h3>
+              <p className="mt-1 text-[12.5px] leading-relaxed text-slate-400">
+                Complete recruitment essentials for amateur and academy trialists.
+              </p>
+            </div>
+            <Badge tone="slate">Included</Badge>
+          </div>
+
+          <div className="mt-4 flex items-baseline gap-1.5">
+            <span className="gw-numeric text-[32px] font-bold leading-none text-white">£0</span>
+            <span className="text-[12px] text-slate-500">/ forever</span>
+          </div>
+
+          <ul className="mt-5 space-y-2.5">
+            {FREE_FEATURES.map((feature) => (
+              <li key={feature} className="flex items-start gap-2 text-[12.5px] text-slate-300">
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" />
+                {feature}
+              </li>
+            ))}
+          </ul>
+
+          <Button className="mt-6" fullWidth variant="secondary" disabled>
+            Current baseline
+          </Button>
+        </Card>
+
+        <Card className="border-brand/30 bg-brand/[0.04]">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="flex items-center gap-2 text-[15px] font-semibold text-white">
+                Player Pro
+                <Zap className="h-3.5 w-3.5 text-brand" />
+              </h3>
+              <p className="mt-1 text-[12.5px] leading-relaxed text-slate-400">
+                Enhanced scouting visibility plus AI observable-only clip tagging.
+              </p>
+            </div>
+            <Badge tone="brand">Boost</Badge>
+          </div>
+
+          <div className="mt-4 flex items-baseline gap-1.5">
+            <span className="gw-numeric text-[32px] font-bold leading-none text-white">£9.99</span>
+            <span className="text-[12px] text-slate-500">/ month</span>
+          </div>
+
+          <ul className="mt-5 space-y-2.5">
+            {PRO_FEATURES.map((feature) => (
+              <li key={feature} className="flex items-start gap-2 text-[12.5px] text-slate-300">
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand" />
+                {feature}
+              </li>
+            ))}
+          </ul>
+
+          <Button className="mt-6" fullWidth loading={busy === 'pro'} onClick={handlePro}>
+            Upgrade to Player Pro
+          </Button>
+        </Card>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto">
-        {/* Free Plan */}
-        <div className="bg-slate-900/80 border border-white/10 rounded-3xl p-8 flex flex-col justify-between">
+      <section className="space-y-3">
+        <div className="flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-xl font-bold text-white mb-1">Standard Player</h2>
-            <p className="text-xs text-slate-400 mb-6">Complete recruitment essentials for amateur & academy trialists.</p>
-
-            <p className="text-4xl font-black text-white mb-6">£0<span className="text-xs text-slate-400 font-normal"> / forever</span></p>
-
-            <div className="space-y-3 mb-8 text-xs text-slate-300">
-              <div className="flex items-center gap-2.5">
-                <Check className="w-4 h-4 text-brand shrink-0" />
-                <span>Full Profile & Skill Ratings</span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <Check className="w-4 h-4 text-brand shrink-0" />
-                <span>Deterministic Opportunity Feed</span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <Check className="w-4 h-4 text-brand shrink-0" />
-                <span>Unlimited Direct Applications</span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <Check className="w-4 h-4 text-brand shrink-0" />
-                <span>1 Highlight Video Clip</span>
-              </div>
-            </div>
+            <h2 className="text-[15px] font-semibold text-white">One-off visibility boosts</h2>
+            <p className="mt-0.5 text-[12.5px] text-slate-400">Expires automatically. Never affects other dimensions.</p>
           </div>
-
-          <button
-            onClick={() => handleUpgrade('free')}
-            disabled={activePlan === 'free' || loading}
-            className={`w-full py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all ${
-              activePlan === 'free' ? 'bg-white/10 text-slate-400 cursor-default' : 'bg-white/5 hover:bg-white/10 text-white'
-            }`}
-          >
-            {activePlan === 'free' ? 'Current Plan' : 'Select Free'}
-          </button>
         </div>
 
-        {/* Pro Plan */}
-        <div className="bg-slate-900/90 border-2 border-brand rounded-3xl p-8 flex flex-col justify-between shadow-2xl shadow-brand/10 relative">
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-brand text-black text-xs font-black px-4 py-0.5 rounded-full uppercase tracking-wider">
-            Scouting Boost
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <h2 className="text-xl font-bold text-white">Player Pro</h2>
-              <Zap className="w-5 h-5 text-brand" />
+        <div className="grid gap-4 sm:grid-cols-3">
+          {BOOST_PACKAGES.map((pkg) => (
+            <div
+              key={pkg.id}
+              className={cn(
+                'flex flex-col rounded-2xl border p-5 transition-colors',
+                pkg.popular ? 'border-brand/40 bg-brand/[0.06]' : 'gw-tilt-hover border-white/[0.08] bg-white/[0.025]',
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-[13.5px] font-semibold text-white">{pkg.duration}</h3>
+                <Zap className={cn('h-4 w-4', pkg.popular ? 'text-brand' : 'text-slate-500')} />
+              </div>
+              <p className="mt-1 text-[11.5px] text-slate-500">{pkg.impressions}</p>
+              <p className="gw-numeric mt-3 text-[24px] font-bold leading-none text-white">{pkg.price}</p>
+              <Button
+                className="mt-4"
+                fullWidth
+                size="sm"
+                variant={pkg.popular ? 'primary' : 'secondary'}
+                loading={busy === pkg.id}
+                onClick={() => handleBoost(pkg.id)}
+              >
+                Activate
+              </Button>
             </div>
-            <p className="text-xs text-slate-400 mb-6">Enhanced scouting visibility and AI observable highlight tagging.</p>
-
-            <p className="text-4xl font-black text-white mb-6">£9.99<span className="text-xs text-slate-400 font-normal"> / month</span></p>
-
-            <div className="space-y-3 mb-8 text-xs text-slate-300">
-              <div className="flex items-center gap-2.5">
-                <Check className="w-4 h-4 text-brand shrink-0" />
-                <span>+5% Deterministic Search Boost</span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <Check className="w-4 h-4 text-brand shrink-0" />
-                <span>Unlimited Match Video Clips</span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <Check className="w-4 h-4 text-brand shrink-0" />
-                <span>AI-Assisted Observable Movement Tagging</span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <Check className="w-4 h-4 text-brand shrink-0" />
-                <span>Transparent 6-Weight Score Breakdowns</span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <Check className="w-4 h-4 text-brand shrink-0" />
-                <span>Profile View Read Receipts from Scouts</span>
-              </div>
-            </div>
-          </div>
-
-          <button
-            onClick={() => handleUpgrade('pro')}
-            disabled={activePlan === 'pro' || loading}
-            className={`w-full py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
-              activePlan === 'pro'
-                ? 'bg-brand/20 text-brand border border-brand/40 cursor-default'
-                : 'bg-brand hover:bg-brand-hover text-black shadow-lg shadow-brand/20'
-            }`}
-          >
-            {loading && activePlan !== 'pro' ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : activePlan === 'pro' ? (
-              'Active Pro Membership'
-            ) : (
-              'Upgrade to Player Pro'
-            )}
-          </button>
+          ))}
         </div>
-      </div>
+      </section>
+
+      <Card variant="flat">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 text-brand">
+            <ShieldCheck className="h-4 w-4" />
+          </span>
+          <div className="text-[12.5px] leading-relaxed text-slate-400">
+            <p className="font-semibold text-slate-200">Algorithmic integrity guarantee</p>
+            <p className="mt-1">
+              A boost contributes only to the documented 5% boost dimension. It cannot override position, distance or
+              level. When it expires the engine drops it on the next recalculation.
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <Card variant="flat">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 text-sky-300">
+            <Info className="h-4 w-4" />
+          </span>
+          <div className="flex-1 text-[12.5px] leading-relaxed text-slate-400">
+            <p className="font-semibold text-slate-200">Checkout availability</p>
+            <p className="mt-1 flex items-start gap-1.5">
+              <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" />
+              On the free Firebase plan, Cloud Functions are unavailable. Boosts and Pro are then queued as requests for
+              an admin to activate. No entitlement is granted client-side.
+            </p>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 };

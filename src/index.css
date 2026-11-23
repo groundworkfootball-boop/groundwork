@@ -5,21 +5,22 @@
   :root {
     color-scheme: dark;
 
-    --gw-ink-950: #05080f;
-    --gw-ink-900: #080d17;
-    --gw-ink-850: #0b1220;
-    --gw-ink-800: #101a2b;
-    --gw-ink-700: #17233a;
-    --gw-line: rgba(148, 163, 184, 0.14);
-    --gw-line-strong: rgba(148, 163, 184, 0.26);
-    --gw-brand: #ccff00;
-    --gw-brand-soft: rgba(204, 255, 0, 0.12);
-    --gw-emerald: #34d399;
-    --gw-amber: #fbbf24;
-    --gw-rose: #fb7185;
-    --gw-sky: #38bdf8;
-    --gw-violet: #a78bfa;
-  }
+      --gw-ink-950: #04070c;
+      --gw-ink-900: #070b12;
+      --gw-ink-850: #0a101a;
+      --gw-ink-800: #0f1725;
+      --gw-ink-700: #16202f;
+      --gw-line: rgba(160, 176, 200, 0.13);
+      --gw-line-strong: rgba(160, 176, 200, 0.26);
+      --gw-brand: #b6ff1a;
+      --gw-brand-deep: #8fe000;
+      --gw-brand-soft: rgba(182, 255, 26, 0.12);
+      --gw-emerald: #34d399;
+      --gw-amber: #fbbf24;
+      --gw-rose: #fb7185;
+      --gw-sky: #38bdf8;
+      --gw-violet: #a78bfa;
+    }
 
   html {
     scroll-behavior: smooth;
@@ -206,7 +207,150 @@
   .gw-scrollbar-none::-webkit-scrollbar {
     display: none;
   }
-}
+
+    /* ── Technical shell (framed instrument panel) ────────────────────── */
+    .gw-frame {
+      position: relative;
+      border: 1px solid var(--gw-line);
+      background:
+        linear-gradient(180deg, rgba(15, 23, 37, 0.82) 0%, rgba(7, 11, 18, 0.92) 100%);
+    }
+
+    .gw-frame::before,
+    .gw-frame::after {
+      content: '';
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      border-color: var(--gw-brand);
+      opacity: 0.75;
+      pointer-events: none;
+    }
+
+    .gw-frame::before {
+      top: -1px;
+      left: -1px;
+      border-top: 1px solid;
+      border-left: 1px solid;
+    }
+
+    .gw-frame::after {
+      bottom: -1px;
+      right: -1px;
+      border-bottom: 1px solid;
+      border-right: 1px solid;
+    }
+
+    .gw-brackets > span {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-color: rgba(182, 255, 26, 0.55);
+      pointer-events: none;
+    }
+
+    .gw-hairline-grid {
+      background-image:
+        linear-gradient(to right, var(--gw-line) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--gw-line) 1px, transparent 1px);
+      background-size: 64px 64px;
+      mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 30%, transparent 78%);
+    }
+
+    .gw-mono {
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+      font-size: 0.6875rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .gw-scanlines::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255, 255, 255, 0.028) 0px,
+        rgba(255, 255, 255, 0.028) 1px,
+        transparent 1px,
+        transparent 3px
+      );
+      opacity: 0.5;
+      mix-blend-mode: overlay;
+    }
+
+    .gw-live-dot {
+      position: relative;
+      display: inline-flex;
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--gw-brand);
+      box-shadow: 0 0 10px rgba(182, 255, 26, 0.9);
+    }
+
+    .gw-live-dot::after {
+      content: '';
+      position: absolute;
+      inset: -4px;
+      border-radius: 999px;
+      border: 1px solid rgba(182, 255, 26, 0.4);
+      animation: gw-pulse-ring 2.4s ease-out infinite;
+    }
+
+    /* ── Staged reveal (masked, staggered) ────────────────────────────── */
+    .gw-stagger > * {
+      animation: gw-reveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+
+    .gw-stagger > *:nth-child(1) { animation-delay: 0.04s; }
+    .gw-stagger > *:nth-child(2) { animation-delay: 0.10s; }
+    .gw-stagger > *:nth-child(3) { animation-delay: 0.16s; }
+    .gw-stagger > *:nth-child(4) { animation-delay: 0.22s; }
+    .gw-stagger > *:nth-child(5) { animation-delay: 0.28s; }
+    .gw-stagger > *:nth-child(6) { animation-delay: 0.34s; }
+    .gw-stagger > *:nth-child(7) { animation-delay: 0.40s; }
+    .gw-stagger > *:nth-child(8) { animation-delay: 0.46s; }
+
+    .gw-pop {
+      animation: gw-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+    }
+
+    .gw-tilt-hover {
+      transition: transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.35s ease, box-shadow 0.35s ease;
+    }
+
+    .gw-tilt-hover:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 26px 60px -30px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(182, 255, 26, 0.16);
+    }
+
+    /* Progress rail used across onboarding steps */
+    .gw-rail {
+      background: linear-gradient(90deg, rgba(182, 255, 26, 0.85), rgba(52, 211, 153, 0.55));
+      box-shadow: 0 0 22px -4px rgba(182, 255, 26, 0.6);
+    }
+  }
+
+  @keyframes gw-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(18px) scale(0.985);
+      filter: blur(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: blur(0);
+    }
+  }
+
+  @keyframes gw-pop {
+    0% { opacity: 0; transform: scale(0.92); }
+    60% { opacity: 1; transform: scale(1.02); }
+    100% { opacity: 1; transform: scale(1); }
+  }
 
 @keyframes gw-rise {
   from {

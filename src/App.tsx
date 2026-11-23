@@ -23,6 +23,10 @@ const VerifyEmailPage = lazy(() => import('./pages/auth/VerifyEmailPage').then((
 const ResetPasswordPage = lazy(() => import('./pages/auth/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })));
 
 const Dashboard = lazy(() => import('./pages/Dashboard/index').then((m) => ({ default: m.Dashboard })));
+const OnboardingPage = lazy(() => import('./pages/onboarding/OnboardingPage').then((m) => ({ default: m.OnboardingPage })));
+const ClubOnboardingFlow = lazy(() => import('./pages/onboarding/ClubOnboardingFlow').then((m) => ({ default: m.ClubOnboardingFlow })));
+const GuardianOnboardingPage = lazy(() => import('./pages/onboarding/GuardianOnboardingPage').then((m) => ({ default: m.GuardianOnboardingPage })));
+
 const NotFound = lazy(() => import('./pages/NotFound').then((m) => ({ default: m.NotFound })));
 
 // Player
@@ -106,6 +110,18 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
   return <>{children}</>;
 }
 
+/**
+ * Picks the correct guided setup for the signed-in role. Kept inside the app so
+ * the onboarding bundle is only downloaded when it is actually needed.
+ */
+function RoleOnboardingRoute() {
+  const { role } = useAuth();
+
+  if (role === 'club') return <ClubOnboardingFlow />;
+  if (role === 'guardian') return <Navigate to="/onboarding/guardian" replace />;
+  return <OnboardingPage />;
+}
+
 function App() {
   return (
     <AppProviders>
@@ -130,6 +146,24 @@ function App() {
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/verify-email" element={<VerifyEmailPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
+
+              {/* Guided first-run onboarding */}
+              <Route
+                path="/onboarding"
+                element={
+                  <ProtectedRoute>
+                    <RoleOnboardingRoute />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/onboarding/guardian"
+                element={
+                  <ProtectedRoute>
+                    <GuardianOnboardingPage />
+                  </ProtectedRoute>
+                }
+              />
 
               {/* Authenticated workspace */}
               <Route

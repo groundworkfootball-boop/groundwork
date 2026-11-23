@@ -1,133 +1,188 @@
-import { useState, useEffect } from 'react';
-import { useToast } from '../../lib/toast';
+import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { collection, getDocs, limit, query, where } from 'firebase/firestore';
+import { Clock, ShieldCheck, Zap } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../lib/toast';
 import { db } from '../../lib/firebase';
-import { collection, addDoc, getDocs, query, where, serverTimestamp } from 'firebase/firestore';
-import { Zap, ShieldCheck, Loader2 } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { EmptyState } from '../../components/ui/EmptyState';
+import { Skeleton } from '../../components/ui/Skeleton';
+import { BOOST_PACKAGES, purchaseBoost } from '../../lib/services/paymentService';
+import { cn } from '../../components/ui/cn';
+import { TrophyIllustration } from '../../components/illustrations/football';
+
+interface BoostRow {
+  id: string;
+  packageId?: string;
+  status?: string;
+  endsAtMs?: number;
+}
 
 export const BoostsPage = () => {
   const { user } = useAuth();
-  const { success, error: toastError } = useToast();
-  const [activeBoost, setActiveBoost] = useState<string | null>(null);
-  const [processing, setProcessing] = useState(false);
+  const { success, error: toastError, info } = useToast();
+  const [searchParams] = useSearchParams();
+
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [boosts, setBoosts] = useState<BoostRow[]>([]);
 
   useEffect(() => {
     if (!user?.uid) return;
-    const loadBoosts = async () => {
+    let cancelled = false;
+
+    const load = async () => {
+      setLoading(true);
       try {
-        const q = query(
-          collection(db, 'boosts'),
-          where('clubId', '==', user.uid),
-          where('status', '==', 'active')
-        );
-        const snap = await getDocs(q);
-        if (!snap.empty) {
-          setActiveBoost(snap.docs[0].data().packageId || '14-day');
-        }
-      } catch (err) {
-        console.warn('Load boosts:', err);
+        // Boosts are owner-scoped by document id; query by the club id field.
+        const snap = await getDocs(
+          query(collection(db, 'boosts'), where('clubId', '==', user.uid), limit(20)),
+        ).catch(() => null);
+        if (cancelled) return;
+        const rows = (snap?.docs ?? []).map((entry) => {
+          const data = entry.data() as Record<string, unknown>;
+          return {
+            id: entry.id,
+            packageId: data.packageId as string | undefined,
+            status: data.status as string | undefined,
+            endsAtMs: typeof data.endsAtMs === 'number' ? data.endsAtMs : undefined,
+          };
+        });
+        setBoosts(rows.filter((row) => row.status === 'active'));
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     };
-    loadBoosts();
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, [user?.uid]);
 
-  const handlePurchaseBoost = async (pkg: string) => {
+  useEffect(() => {
+    const status = searchParams.get('status');
+    if (status === 'success') success('Boost payment confirmed. It activates once Stripe confirms the webhook.');
+    if (status === 'cancelled') info('Checkout cancelled. No charge was made.');
+  }, [searchParams, success, info]);
+
+  const handlePurchase = async (packageId: string) => {
     if (!user?.uid) return;
-    setProcessing(true);
+    setBusy(packageId);
     try {
-      const prices: Record<string, number> = { '7-day': 1900, '14-day': 3500, '30-day': 6500 };
-      await addDoc(collection(db, 'boosts'), {
-        clubId: user.uid,
-        packageId: pkg,
-        status: 'active',
-        boostStartedAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
-      });
-
-      await addDoc(collection(db, 'payments'), {
-        clubId: user.uid,
-        amount: prices[pkg] || 1900,
-        currency: 'gbp',
-        status: 'succeeded',
-        type: 'boost',
-        product: `${pkg} Visibility Boost`,
-        createdAt: serverTimestamp(),
-      });
-
-      setActiveBoost(pkg);
-      success(`Opportunity listing boosted for ${pkg}!`);
+      const result = await purchaseBoost(user.uid, packageId);
+      if (result.url) {
+        window.location.href = result.url;
+        return;
+      }
+      info(result.message);
     } catch (err) {
-      toastError('Failed to process boost.');
+      console.error(err);
+      toastError('We could not start the boost checkout.');
     } finally {
-      setProcessing(false);
+      setBusy(null);
     }
   };
 
+  const activePackages = new Set(boosts.map((boost) => boost.packageId));
+
   return (
-    <div className="space-y-8 max-w-5xl mx-auto pb-12">
-      <div>
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-brand font-bold text-xs uppercase tracking-widest">Listing Promotion</span>
-        </div>
-        <h1 className="text-3xl font-black uppercase text-white tracking-tight">Opportunity Visibility Boosts</h1>
-        <p className="text-sm text-slate-400">
-          Elevate your trial opportunities at the top of compatible players&apos; match feeds.
-        </p>
-      </div>
+    <div className="space-y-6 pb-12">
+      <PageHeader
+        eyebrow="Listing promotion"
+        title="Visibility boosts"
+        description="Elevate your listings within compatible players' feeds. One documented dimension, automatic expiry, no hidden effects."
+      />
 
-      <div className="bg-brand/10 border border-brand/30 rounded-3xl p-6 flex items-start gap-4">
-        <ShieldCheck className="w-6 h-6 text-brand shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <h2 className="text-sm font-bold text-white">Algorithmic Integrity Guarantee</h2>
-          <p className="text-xs text-slate-300 leading-relaxed">
-            Visibility boosts contribute exclusively to the documented 5% boost dimension in the deterministic matching engine. Boosts expire automatically and cannot override position, distance, or capability tiers.
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {[
-          { id: '7-day', duration: '7 Days', price: '£19', impressions: '~400 impressions' },
-          { id: '14-day', duration: '14 Days', price: '£35', impressions: '~950 impressions', popular: true },
-          { id: '30-day', duration: '30 Days', price: '£65', impressions: '~2,200 impressions' },
-        ].map((pkg) => (
-          <div
-            key={pkg.id}
-            className={`rounded-3xl p-6 flex flex-col justify-between transition-all relative ${
-              pkg.popular
-                ? 'bg-slate-900/90 border-2 border-brand shadow-xl'
-                : 'bg-slate-900/70 border border-white/10'
-            }`}
-          >
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-bold text-white text-lg">{pkg.duration} Boost</h3>
-                <Zap className="w-5 h-5 text-brand" />
+      {boosts.length > 0 ? (
+        <Card variant="flat">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-brand/25 bg-brand/10 text-brand">
+                <Zap className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="text-[13px] font-semibold text-white">
+                  {boosts.length} active boost{boosts.length > 1 ? 's' : ''}
+                </p>
+                <p className="text-[11.5px] text-slate-500">
+                  {boosts.map((boost) => boost.packageId).filter(Boolean).join(', ')}
+                </p>
               </div>
-              <p className="text-xs text-slate-400 mb-4">{pkg.impressions}</p>
-              <p className="text-3xl font-black text-white mb-6">{pkg.price}</p>
             </div>
-
-            <button
-              onClick={() => handlePurchaseBoost(pkg.id)}
-              disabled={processing || activeBoost === pkg.id}
-              className={`w-full py-3 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
-                activeBoost === pkg.id
-                  ? 'bg-brand/20 text-brand border border-brand/40 cursor-default'
-                  : 'bg-brand hover:bg-brand-hover text-black shadow-md shadow-brand/20'
-              }`}
-            >
-              {processing && activeBoost !== pkg.id ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : activeBoost === pkg.id ? (
-                'Active on Listing'
-              ) : (
-                'Activate Boost'
-              )}
-            </button>
+            <Badge tone="brand" dot>
+              Live
+            </Badge>
           </div>
-        ))}
+        </Card>
+      ) : null}
+
+      <div className="rounded-2xl border border-brand/25 bg-brand/[0.06] p-4">
+        <div className="flex items-start gap-3">
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-brand" />
+          <div className="space-y-1">
+            <h2 className="text-[13px] font-bold text-white">Algorithmic integrity guarantee</h2>
+            <p className="text-[12px] leading-relaxed text-slate-300">
+              Visibility boosts contribute exclusively to the documented 5% boost dimension. They expire automatically
+              and cannot override position, distance, level or attribute scores.
+            </p>
+          </div>
+        </div>
       </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        {BOOST_PACKAGES.map((pkg) => {
+          const isActive = activePackages.has(pkg.id);
+          return (
+            <div
+              key={pkg.id}
+              className={cn(
+                'flex flex-col rounded-2xl border p-5 transition-colors',
+                pkg.popular ? 'border-brand/40 bg-brand/[0.06]' : 'gw-tilt-hover border-white/[0.08] bg-white/[0.025]',
+              )}
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-[14px] font-semibold text-white">{pkg.duration} boost</h3>
+                <Zap className={cn('h-4 w-4', pkg.popular ? 'text-brand' : 'text-slate-500')} />
+              </div>
+              <p className="mt-1 text-[11.5px] text-slate-500">{pkg.impressions}</p>
+              <p className="gw-numeric mt-4 text-[28px] font-bold leading-none text-white">{pkg.price}</p>
+              <Button
+                className="mt-5"
+                fullWidth
+                variant={isActive ? 'secondary' : pkg.popular ? 'primary' : 'outline'}
+                disabled={isActive}
+                loading={busy === pkg.id}
+                onClick={() => handlePurchase(pkg.id)}
+              >
+                {isActive ? 'Active on listing' : 'Activate boost'}
+              </Button>
+            </div>
+          );
+        })}
+      </div>
+
+      {loading ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Skeleton className="h-24" />
+          <Skeleton className="h-24" />
+        </div>
+      ) : boosts.length === 0 ? (
+        <EmptyState
+          icon={<Clock className="h-6 w-6" />}
+          title="No active boosts"
+          description="Boosts run for a fixed window and then expire automatically. Nothing renews silently."
+          action={
+            <div className="flex justify-center">
+              <TrophyIllustration className="max-h-40" />
+            </div>
+          }
+        />
+      ) : null}
     </div>
   );
 };

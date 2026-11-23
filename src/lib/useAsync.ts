@@ -4,6 +4,8 @@ export interface AsyncState<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
+  /** The original rejection, so callers can distinguish "denied" from "broken". */
+  rawError: unknown;
   reload: () => void;
 }
 
@@ -21,6 +23,7 @@ export function useAsync<T>(
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
+  const [rawError, setRawError] = useState<unknown>(null);
   const [nonce, setNonce] = useState(0);
   const mounted = useRef(true);
 
@@ -39,6 +42,7 @@ export function useAsync<T>(
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setRawError(null);
 
     loader()
       .then((result) => {
@@ -47,6 +51,7 @@ export function useAsync<T>(
       .catch((err: unknown) => {
         if (cancelled || !mounted.current) return;
         console.error('[useAsync]', err);
+        setRawError(err);
         setError('We could not load this data. Please try again.');
       })
       .finally(() => {
@@ -61,5 +66,5 @@ export function useAsync<T>(
 
   const reload = useCallback(() => setNonce((n) => n + 1), []);
 
-  return { data, loading, error, reload };
+  return { data, loading, error, rawError, reload };
 }

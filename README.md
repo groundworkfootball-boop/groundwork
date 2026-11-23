@@ -29,6 +29,44 @@ imports, and `functions/src/ai/` has no write access to `matchResults` or
 - **Payments** — Stripe Checkout + Billing Portal, idempotent webhooks
 - **Video** — FFmpeg pipeline (Cloud Run worker), server-validated uploads
 
+## Design system
+
+The interface is a **bright-green technical console**: near-black surfaces, thin
+structural hairlines, corner brackets on framed panels, mono utility labels and
+a vivid signal-green (`#b6ff1a`) accent reserved for active states and focal
+typography. Split layouts pair content with a live visual zone.
+
+- **WebGL viewport** — `src/components/visual/ParticleField.tsx` is a
+  dependency-free WebGL particle engine (additive glow, orbital camera, pointer
+  parallax). It pauses offscreen and honours `prefers-reduced-motion`.
+- **Football illustration set** — `src/components/illustrations/football.tsx`
+  contains hand-authored SVG for boots, balls, crests, jerseys, tactics boards,
+  scouting radars, trophies and whistles. No third-party art.
+- **Cinematic hero** — `public/media/hero.mp4` is procedurally rendered by
+  `scripts/render-hero.mjs` (a night stadium from behind the goal). Regenerate
+  with `npm run render:hero`; requires `ffmpeg` on PATH.
+- **Guided onboarding** — `src/components/onboarding/OnboardingKit.tsx` provides
+  the progress rail, choice tiles, staged reveals and completion celebration
+  used by the per-role first-run flows.
+
+---
+
+## First-run onboarding
+
+`useOnboardingGate` reads `users/{uid}.onboarding` and routes players and clubs
+into `/onboarding` until they finish. Guardians get a dedicated safeguarding
+flow at `/onboarding/guardian`.
+
+| Role | Flow | Persists |
+| --- | --- | --- |
+| Player | `pages/onboarding/OnboardingPage.tsx` — 4 steps | identity, positions, level, availability, bio |
+| Club | `pages/onboarding/ClubOnboardingFlow.tsx` — 4 steps | identity, targets, formation, radius |
+| Guardian | `pages/onboarding/GuardianOnboardingPage.tsx` — 3 steps | linked youth + consent acknowledgement |
+
+Each flow writes `onboarding.{completed,role,version,completedAt}` on the user
+document and only client-writable profile fields — never `searchable`,
+`consentStatus` or verification state.
+
 ---
 
 ## Quick start
@@ -125,9 +163,9 @@ See [SECURITY.md](./SECURITY.md) and [SAFEGUARDING.md](./SAFEGUARDING.md).
 ```bash
 npm run lint                                   # oxlint
 npx tsc -b                                     # typecheck
-npx vitest run src/lib/*.test.ts               # unit tests (28)
+npx vitest run src/lib/*.test.ts               # unit tests (50)
 npx firebase emulators:exec --only firestore \
-  "npx vitest run firestore.test.ts"           # rules tests (33)
+  "npx vitest run firestore.test.ts"           # rules tests (requires Java)
 npm run build                                  # production build
 ```
 

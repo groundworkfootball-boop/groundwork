@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { collection, getDocs, doc, updateDoc, serverTimestamp, addDoc } from 'firebase/firestore';
 import { Building2, ShieldCheck, Check, X, RefreshCw } from 'lucide-react';
-import { db, functions } from '../../lib/firebase';
+import { db, functions, auth } from '../../lib/firebase';
 import { useToast } from '../../lib/toast';
 import type { ClubRecord } from '../../app/types';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -81,18 +81,23 @@ export const ClubsPage = () => {
     } catch (err) {
       console.info('[ClubsPage] Cloud Function not deployed (Free Spark Plan) - applying admin verification directly in Firestore:', err);
       try {
+        const expiresAt = decision === 'approved' && grantYouth ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000) : null;
+        // Rules compare `youthVerificationExpiresAt` against request.time, so a
+        // real Timestamp is required — a millisecond number would never match.
         await updateDoc(doc(db, 'clubs', clubId), {
           verificationStatus: decision,
           verifiedAdult: decision === 'approved',
           verifiedYouth: decision === 'approved' && grantYouth,
-          youthVerificationExpiresAtMs:
-            decision === 'approved' && grantYouth ? Date.now() + 365 * 24 * 60 * 60 * 1000 : null,
+          youthVerificationExpiresAt: expiresAt,
+          youthVerificationExpiresAtMs: expiresAt ? expiresAt.getTime() : null,
+          verificationReviewedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
         await addDoc(collection(db, 'auditLogs'), {
           action: `club_verification_${decision}`,
           resourceType: 'club',
           resourceId: clubId,
+          actorId: auth.currentUser?.uid ?? null,
           actorRole: 'admin',
           timestamp: serverTimestamp(),
         });

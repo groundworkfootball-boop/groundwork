@@ -1,339 +1,325 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { AlertTriangle, CheckCircle2, Clock, Loader2, RefreshCw, ShieldCheck, UserPlus } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
-import { db } from '../../lib/firebase';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { Input, Select } from '../../components/ui/Input';
+import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
+import { CardSkeleton } from '../../components/ui/Skeleton';
 import {
-  collection,
-  query,
-  where,
-  getDocs,
-  doc,
-  updateDoc,
-  addDoc,
-  serverTimestamp,
-} from 'firebase/firestore';
-import {
-  ShieldCheck,
-  ShieldAlert,
-  CheckCircle2,
-  Loader2,
-  UserPlus,
-  Lock,
-} from 'lucide-react';
+  PRIVACY_NOTICE_VERSION,
+  grantConsent,
+  linkYouthAccount,
+  listLinkedYouth,
+  withdrawConsent,
+  type LinkedYouth,
+} from '../../lib/services/guardianConsentService';
+import { cn } from '../../components/ui/cn';
+import { SafeguardingIllustration } from '../../components/illustrations';
 
-interface YouthConsentItem {
-  id: string;
-  name: string;
-  dob?: string;
-  consentStatus: 'pending' | 'granted' | 'withdrawn';
-  email?: string;
-}
+const STATUS_META = {
+  pending: {
+    label: 'Consent pending',
+    tone: 'amber' as const,
+    copy: 'Hidden from every club search until you approve.',
+  },
+  granted: {
+    label: 'Consent granted',
+    tone: 'emerald' as const,
+    copy: 'Visible only to clubs with live youth verification.',
+  },
+  withdrawn: {
+    label: 'Consent withdrawn',
+    tone: 'rose' as const,
+    copy: 'Delisted. Match results removed and media queued for deletion.',
+  },
+};
 
 export const ConsentPage = () => {
   const { user } = useAuth();
   const { success, error: toastError } = useToast();
 
-  const [youths, setYouths] = useState<YouthConsentItem[]>([]);
+  const [youths, setYouths] = useState<LinkedYouth[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
-  const [agreedToTerms, setAgreedToTerms] = useState(false);
-
-  // Link youth state
-  const [showLinkForm, setShowLinkForm] = useState(false);
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [showLink, setShowLink] = useState(false);
   const [childEmail, setChildEmail] = useState('');
+  const [relationship, setRelationship] = useState('Parent');
   const [linking, setLinking] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!user?.email && !user?.uid) return;
-    loadYouths();
-  }, [user?.email, user?.uid]);
-
-  const loadYouths = async () => {
+  const load = useCallback(async () => {
+    if (!user?.email) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
+    setError(null);
     try {
-      const q = query(
-        collection(db, 'players'),
-        where('guardianEmail', '==', user?.email || ''),
-      );
-      const snap = await getDocs(q);
-      const list: YouthConsentItem[] = snap.docs.map((d) => ({
-        id: d.id,
-        name: d.data().name || 'Youth Player',
-        dob: d.data().dob,
-        consentStatus: d.data().consentStatus || 'pending',
-        email: d.data().email,
-      }));
-      setYouths(list);
+      setYouths(await listLinkedYouth(user.email));
     } catch (err) {
       console.error(err);
+      setError('We could not load your linked players. Please try again.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.email]);
 
-  const handleLinkYouth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!childEmail.trim() || !user?.email) return;
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const handleLink = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setLinkError(null);
+    if (!childEmail.trim() || !user?.email) {
+      setLinkError('Enter the email the player registered with.');
+      return;
+    }
     setLinking(true);
     try {
-      const q = query(
-        collection(db, 'players'),
-        where('email', '==', childEmail.trim().toLowerCase()),
-      );
-      const snap = await getDocs(q);
-      if (snap.empty) {
-        toastError(`No player account found with email "${childEmail}". Check spelling with your child.`);
-        return;
-      }
-
-      const pDoc = snap.docs[0];
-      await updateDoc(doc(db, 'players', pDoc.id), {
+      const result = await linkYouthAccount({
         guardianEmail: user.email,
-        guardianId: user.uid,
         guardianName: user.name,
-        isYouth: true,
-        updatedAt: serverTimestamp(),
+        relationship,
+        childEmail: childEmail.trim(),
       });
-
-      success(`Successfully linked ${pDoc.data().name || 'player'} to your guardian portal!`);
+      success(
+        result.mode === 'callable'
+          ? `${result.name ?? 'Player'} linked. Consent is pending until you approve.`
+          : 'Link request submitted. An administrator will confirm the relationship.',
+      );
       setChildEmail('');
-      setShowLinkForm(false);
-      await loadYouths();
+      setShowLink(false);
+      await load();
     } catch (err) {
-      toastError('Failed to link youth account.');
+      setLinkError((err as Error)?.message || 'We could not link that account.');
     } finally {
       setLinking(false);
     }
   };
 
-  const handleToggleConsent = async (item: YouthConsentItem, newStatus: 'granted' | 'withdrawn') => {
-    if (newStatus === 'granted' && !agreedToTerms) {
-      toastError('Please confirm the statutory child safeguarding notice checkbox below before granting consent.');
+  const handleDecision = async (youth: LinkedYouth, decision: 'granted' | 'withdrawn') => {
+    if (decision === 'granted' && !acknowledged) {
+      toastError('Confirm the safeguarding notice before granting consent.');
       return;
     }
-    setProcessingId(item.id);
+    setProcessingId(youth.id);
     try {
-      const isGranting = newStatus === 'granted';
+      const result = decision === 'granted' ? await grantConsent(youth.id) : await withdrawConsent(youth.id);
 
-      // Real write to Firestore players document
-      await updateDoc(doc(db, 'players', item.id), {
-        consentStatus: newStatus,
-        searchable: isGranting,
-        consentGrantedAt: isGranting ? serverTimestamp() : null,
-        updatedAt: serverTimestamp(),
-      });
-
-      // Write immutable append-only record to consentAudit
-      await addDoc(collection(db, 'consentAudit'), {
-        youthId: item.id,
-        guardianId: user?.uid || user?.email,
-        action: newStatus,
-        timestamp: serverTimestamp(),
-        privacyNoticeVersion: '2026.1-EN',
-        source: 'guardian_consent_center',
-      });
-
-      setYouths((prev) =>
-        prev.map((y) => (y.id === item.id ? { ...y, consentStatus: newStatus } : y)),
-      );
-
-      if (isGranting) {
-        success(`Consent granted for ${item.name}! Profile is now visible to verified youth clubs.`);
+      if (result.mode === 'callable') {
+        setYouths((prev) =>
+          prev.map((entry) => (entry.id === youth.id ? { ...entry, consentStatus: decision } : entry)),
+        );
+        success(
+          decision === 'granted'
+            ? `Consent granted for ${youth.name}. Only live-verified youth clubs can now see the profile.`
+            : `Consent withdrawn for ${youth.name}. Profile delisted immediately.`,
+        );
       } else {
-        success(`Consent withdrawn for ${item.name}. Profile was instantly delisted from all searches.`);
+        success('Request recorded. A safeguarding administrator will apply it and write the audit record.');
       }
     } catch (err) {
-      toastError((err as Error)?.message ?? 'Failed to update consent.');
+      console.error(err);
+      toastError('We could not update consent. Please try again.');
     } finally {
       setProcessingId(null);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <Loader2 className="w-8 h-8 text-brand animate-spin" />
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-8 max-w-4xl mx-auto pb-16">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <span className="text-brand font-bold text-xs uppercase tracking-widest">
-            Statutory Safeguarding Portal
-          </span>
-          <h1 className="text-3xl font-black uppercase text-white tracking-tight mt-1">
-            Guardian Consent Center
-          </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Provide explicit verified parental authorization for youth players under 18 years of age.
-          </p>
-        </div>
-        <button
-          onClick={() => setShowLinkForm((p) => !p)}
-          className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold uppercase tracking-wider border border-white/10 flex items-center gap-2 self-start"
-        >
-          <UserPlus className="w-4 h-4 text-brand" />
-          <span>Link Child's Account</span>
-        </button>
-      </div>
+    <div className="space-y-6 pb-12">
+      <PageHeader
+        eyebrow="Guardian portal"
+        title="Consent centre"
+        description="Your approval is the only thing that makes a youth profile visible. Withdrawal is immediate and audited."
+        actions={
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowLink((value) => !value)}
+            iconLeft={<UserPlus className="h-3.5 w-3.5" />}
+          >
+            {showLink ? 'Close' : 'Link a player'}
+          </Button>
+        }
+      />
 
-      {/* Link Account Form */}
-      {showLinkForm && (
-        <form
-          onSubmit={handleLinkYouth}
-          className="p-6 bg-slate-900 border border-brand/30 rounded-3xl space-y-4 animate-in fade-in duration-200"
-        >
-          <h3 className="text-sm font-bold uppercase tracking-wider text-white">
-            Link Child's Registered Player Account
-          </h3>
-          <p className="text-xs text-slate-400">
-            Enter the email address your child used to create their player account on Groundwork.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3">
-            <input
-              type="email"
-              value={childEmail}
-              onChange={(e) => setChildEmail(e.target.value)}
-              placeholder="child.player@example.com"
-              className="flex-1 bg-dark-bg border border-dark-border rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-brand"
-              required
-            />
-            <button
-              type="submit"
-              disabled={linking}
-              className="px-6 py-2.5 bg-brand text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl hover:bg-brand-hover disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {linking ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-              <span>Link Account</span>
-            </button>
+      {showLink ? (
+        <Card>
+          <form onSubmit={handleLink} className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-[1fr_200px]">
+              <Input
+                label="Player email"
+                type="email"
+                value={childEmail}
+                onChange={(event) => setChildEmail(event.target.value)}
+                placeholder="player@example.com"
+                error={linkError}
+                required
+              />
+              <Select
+                label="Relationship"
+                value={relationship}
+                onChange={(event) => setRelationship(event.target.value)}
+              >
+                {['Parent', 'Legal guardian', 'Carer', 'Other responsible adult'].map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <p className="text-[12px] leading-relaxed text-slate-500">
+              The account must already exist and be flagged as a youth profile. Adult accounts cannot be linked.
+            </p>
+            <Button type="submit" loading={linking} size="sm">
+              Send link request
+            </Button>
+          </form>
+        </Card>
+      ) : null}
+
+      {loading ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <CardSkeleton rows={4} />
+          <CardSkeleton rows={4} />
+        </div>
+      ) : error ? (
+        <ErrorState description={error} onRetry={load} />
+      ) : youths.length === 0 ? (
+        <EmptyState
+          icon={<ShieldCheck className="h-6 w-6" />}
+          title="No linked players yet"
+          description="Once you link a youth account, you control exactly what verified clubs can see."
+          action={
+            <Button size="sm" onClick={() => setShowLink(true)} iconLeft={<UserPlus className="h-3.5 w-3.5" />}>
+              Link a player
+            </Button>
+          }
+        />
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="space-y-4">
+            {youths.map((youth) => {
+              const meta = STATUS_META[youth.consentStatus] ?? STATUS_META.pending;
+              const busy = processingId === youth.id;
+              return (
+                <Card key={youth.id}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h3 className="truncate text-[15px] font-semibold text-white">{youth.name}</h3>
+                        <Badge tone={meta.tone} dot>
+                          {meta.label}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-[12.5px] leading-relaxed text-slate-400">{meta.copy}</p>
+                    </div>
+                  </div>
+
+                  <dl className="mt-4 grid grid-cols-2 gap-3 text-[12px] sm:grid-cols-4">
+                    {[
+                      ['Date of birth', youth.dob ?? '—'],
+                      ['Account', youth.email ?? '—'],
+                      ['Notice', PRIVACY_NOTICE_VERSION],
+                      ['Status', youth.consentStatus],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-2.5 py-2">
+                        <dt className="gw-mono text-slate-500">{label}</dt>
+                        <dd className="mt-0.5 truncate font-medium text-slate-200">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {youth.consentStatus !== 'granted' ? (
+                      <Button
+                        size="sm"
+                        loading={busy}
+                        onClick={() => handleDecision(youth, 'granted')}
+                        iconLeft={<CheckCircle2 className="h-3.5 w-3.5" />}
+                      >
+                        Grant consent
+                      </Button>
+                    ) : null}
+                    {youth.consentStatus !== 'withdrawn' ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        loading={busy}
+                        onClick={() => handleDecision(youth, 'withdrawn')}
+                        iconLeft={<AlertTriangle className="h-3.5 w-3.5" />}
+                      >
+                        Withdraw consent
+                      </Button>
+                    ) : null}
+                    <Link
+                      to="/dashboard/guardian/consent-history"
+                      className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12.5px] font-medium text-slate-400 transition-colors hover:text-white"
+                    >
+                      <Clock className="h-3.5 w-3.5" />
+                      Audit history
+                    </Link>
+                  </div>
+                </Card>
+              );
+            })}
           </div>
-        </form>
+
+          <div className="space-y-4">
+            <Card variant="flat">
+              <p className="text-[12.5px] font-semibold text-white">Before you grant consent</p>
+              <label className="mt-3 flex cursor-pointer items-start gap-3 rounded-xl border border-white/[0.10] bg-ink-950/50 p-3">
+                <input
+                  type="checkbox"
+                  checked={acknowledged}
+                  onChange={(event) => setAcknowledged(event.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-white/25 bg-ink-950 accent-brand"
+                />
+                <span className="text-[12px] leading-relaxed text-slate-300">
+                  I have read the safeguarding notice and understand I can withdraw consent at any time.
+                </span>
+              </label>
+              <Link
+                to="/safeguarding"
+                className="mt-3 inline-flex items-center gap-1.5 text-[12px] font-semibold text-brand hover:underline"
+              >
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Read the full policy
+              </Link>
+            </Card>
+
+            <Card variant="flat">
+              <SafeguardingIllustration />
+            </Card>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              fullWidth
+              onClick={load}
+              iconLeft={<RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />}
+            >
+              Refresh
+            </Button>
+          </div>
+        </div>
       )}
 
-      {/* Legal & Governance Notice */}
-      <div className="bg-slate-900/90 border border-brand/30 rounded-3xl p-6 backdrop-blur-xl">
-        <div className="flex items-start gap-4">
-          <div className="p-3 bg-brand/10 border border-brand/30 rounded-2xl text-brand shrink-0">
-            <ShieldAlert className="w-6 h-6" />
-          </div>
-          <div className="space-y-2 text-xs leading-relaxed text-slate-300">
-            <h2 className="text-sm font-bold text-white uppercase tracking-tight">
-              Plain-Language Privacy Notice for Legal Guardians (Version 2026.1-EN)
-            </h2>
-            <p>
-              By granting recruitment consent, you authorize Groundwork to display your ward's football dossier
-              (positions, age band, attributes, training availability, and match clips) <strong>strictly</strong> to verified football
-              clubs that hold authenticated safeguarding clearance.
-            </p>
-            <p>
-              Your child's direct contact details (email, phone number, home address) remain strictly hidden. You retain
-              the statutory right to revoke consent at any moment. Upon revocation, the profile is immediately delisted
-              from club search engines.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Youth List */}
-      <div className="space-y-4">
-        <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400">
-          Linked Minor Profiles ({youths.length})
-        </h2>
-
-        {youths.length === 0 ? (
-          <div className="bg-slate-900/60 border border-white/10 rounded-3xl p-12 text-center">
-            <Lock className="w-12 h-12 text-slate-600 mx-auto mb-3" />
-            <h3 className="text-base font-bold text-white mb-1">No Youth Players Linked Yet</h3>
-            <p className="text-xs text-slate-400 max-w-md mx-auto mb-6">
-              No registered minor accounts are associated with your guardian email ({user?.email}). Click below to link your child's player profile.
-            </p>
-            <button
-              onClick={() => setShowLinkForm(true)}
-              className="px-6 py-2.5 bg-brand text-slate-950 font-black text-xs uppercase tracking-wider rounded-xl hover:bg-brand-hover transition-all"
-            >
-              Link Player Profile
-            </button>
-          </div>
-        ) : (
-          youths.map((item) => (
-            <div
-              key={item.id}
-              className="bg-slate-900/90 border border-white/10 rounded-3xl p-6 space-y-4 backdrop-blur-xl"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-white/10">
-                <div>
-                  <h3 className="text-lg font-black uppercase text-white tracking-tight">{item.name}</h3>
-                  <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
-                    {item.dob && <span>DOB: {item.dob}</span>}
-                    {item.email && <span className="font-mono">{item.email}</span>}
-                  </div>
-                </div>
-
-                <span
-                  className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border self-start sm:self-auto ${
-                    item.consentStatus === 'granted'
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                      : item.consentStatus === 'withdrawn'
-                      ? 'bg-red-500/10 border-red-500/30 text-red-400'
-                      : 'bg-amber-500/10 border-amber-500/30 text-amber-400'
-                  }`}
-                >
-                  Status: {item.consentStatus}
-                </span>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                {item.consentStatus !== 'granted' ? (
-                  <button
-                    onClick={() => handleToggleConsent(item, 'granted')}
-                    disabled={processingId === item.id || !agreedToTerms}
-                    className="flex-1 py-3 bg-brand text-slate-950 font-black text-xs uppercase tracking-wider rounded-2xl hover:bg-brand-hover transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(204,255,0,0.2)]"
-                  >
-                    {processingId === item.id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <ShieldCheck className="w-4 h-4" />
-                    )}
-                    <span>Authorize & Grant Discovery Consent</span>
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handleToggleConsent(item, 'withdrawn')}
-                    disabled={processingId === item.id}
-                    className="flex-1 py-3 bg-red-500/10 border border-red-500/30 text-red-400 font-bold text-xs uppercase tracking-wider rounded-2xl hover:bg-red-500/20 transition-all flex items-center justify-center gap-2"
-                  >
-                    {processingId === item.id ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <ShieldAlert className="w-4 h-4" />
-                    )}
-                    <span>Withdraw Consent & Instant Delist</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Confirmation Checkbox */}
-      <div className="p-4 rounded-2xl border border-white/10 bg-white/5 flex items-start gap-3">
-        <input
-          type="checkbox"
-          id="statutory-agree"
-          checked={agreedToTerms}
-          onChange={(e) => setAgreedToTerms(e.target.checked)}
-          className="mt-1 w-4 h-4 accent-brand rounded cursor-pointer"
-        />
-        <label htmlFor="statutory-agree" className="text-xs text-slate-300 leading-relaxed cursor-pointer select-none">
-          I certify under statutory parental oversight regulations that I am the verified parent or legal guardian of the
-          minor player listed above, and I authorize Groundwork to process their athletic data strictly according to the child safeguarding guidelines.
-        </label>
-      </div>
+      {processingId ? (
+        <p className="flex items-center gap-2 text-[12px] text-slate-500">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          Applying consent change…
+        </p>
+      ) : null}
     </div>
   );
 };

@@ -119,6 +119,11 @@ async function provisionSelf(
       playingLevel: extra.playingLevel ?? null,
       region: extra.region ?? null,
       availability: extra.availability ?? [],
+      // Denormalised so the guardian read rule (`guardianEmail == token.email`)
+      // can match without a join. Without this the guardian portal can never
+      // resolve its linked youth.
+      guardianEmail: isYouth ? (extra.guardianEmail ?? '').toLowerCase().trim() : null,
+      guardianName: isYouth ? (extra.guardianName ?? '') : null,
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       updatedAtMs: Date.now(),

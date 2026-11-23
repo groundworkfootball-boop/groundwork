@@ -33,6 +33,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useAuth, type Role } from '../../context/AuthContext';
+import { useOnboardingGate } from '../../lib/useOnboardingGate';
 import { useToast } from '../../lib/toast';
 import { cn } from '../ui/cn';
 import { Badge } from '../ui/Badge';
@@ -141,8 +142,16 @@ export function DashboardShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const { success } = useToast();
+  const gate = useOnboardingGate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+
+  useEffect(() => {
+    if (gate.loading) return;
+    if (gate.needsOnboarding) {
+      navigate('/onboarding', { replace: true });
+    }
+  }, [gate.loading, gate.needsOnboarding, navigate]);
 
   useEffect(() => {
     setMobileOpen(false);
@@ -169,12 +178,13 @@ export function DashboardShell() {
     <div className="flex h-full flex-col">
       <div className="flex h-16 shrink-0 items-center justify-between border-b border-white/[0.06] px-4">
         <NavLink to="/dashboard" className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-brand/30 bg-brand/10">
-            <Target className="h-4 w-4 text-brand" />
+          <span className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-brand/40 bg-brand/10">
+            <Target className="h-3.5 w-3.5 text-brand" />
+            <span className="absolute -right-0.5 -top-0.5 h-1 w-1 rounded-full bg-brand shadow-[0_0_6px_rgba(182,255,26,0.9)]" />
           </span>
           <span className="flex flex-col leading-none">
-            <span className="font-display text-[14px] font-bold tracking-tight text-white">GROUNDWORK</span>
-            <span className="mt-0.5 text-[8.5px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <span className="font-display text-[13px] font-bold tracking-[0.13em] text-white">GROUNDWORK</span>
+            <span className="gw-mono mt-1 text-[8px] text-slate-500">
               {role ? ROLE_LABEL[role] : 'Workspace'}
             </span>
           </span>
@@ -189,12 +199,10 @@ export function DashboardShell() {
         </button>
       </div>
 
-      <nav className="gw-scrollbar-none flex-1 overflow-y-auto px-3 py-4" aria-label="Dashboard">
+      <nav className="gw-scrollbar-none flex-1 overflow-y-auto px-2.5 py-4" aria-label="Dashboard">
         {groups.map((group) => (
           <div key={group.label} className="mb-5">
-            <p className="mb-1.5 px-2.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
-              {group.label}
-            </p>
+            <p className="gw-mono mb-2 px-2.5 text-[9px] text-slate-600">{group.label}</p>
             <ul className="space-y-0.5">
               {group.items.map((item) => (
                 <li key={item.href + item.name}>
@@ -203,22 +211,27 @@ export function DashboardShell() {
                     end={item.href === '/dashboard'}
                     className={({ isActive }) =>
                       cn(
-                        'group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors',
+                        'group relative flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[12.5px] font-medium transition-colors',
                         isActive
-                          ? 'bg-brand/[0.10] text-brand'
+                          ? 'bg-brand/[0.09] text-brand'
                           : 'text-slate-400 hover:bg-white/[0.05] hover:text-white',
                       )
                     }
                   >
                     {({ isActive }) => (
                       <>
-                        <item.icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-brand' : 'text-slate-500')} />
+                        {isActive ? (
+                          <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-brand shadow-[0_0_8px_rgba(182,255,26,0.8)]" />
+                        ) : null}
+                        <item.icon className={cn('h-3.5 w-3.5 shrink-0', isActive ? 'text-brand' : 'text-slate-500')} />
                         <span className="flex-1 truncate">{item.name}</span>
                         {item.badge && (
                           <span
                             className={cn(
-                              'rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide',
-                              isActive ? 'bg-brand/20 text-brand' : 'bg-white/[0.07] text-slate-500',
+                              'gw-mono rounded border px-1 py-0.5 text-[8px] leading-none',
+                              isActive
+                                ? 'border-brand/30 bg-brand/15 text-brand'
+                                : 'border-white/[0.09] bg-white/[0.04] text-slate-500',
                             )}
                           >
                             {item.badge}
@@ -234,14 +247,14 @@ export function DashboardShell() {
         ))}
       </nav>
 
-      <div className="shrink-0 border-t border-white/[0.06] p-3">
-        <div className="flex items-center gap-2.5 rounded-xl bg-white/[0.03] p-2.5">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand/15 text-[12px] font-bold text-brand">
+      <div className="shrink-0 border-t border-white/[0.06] p-2.5">
+        <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.07] bg-white/[0.025] p-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-brand/25 bg-brand/12 text-[11px] font-bold text-brand">
             {initials}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[12.5px] font-medium text-white">{user?.name ?? 'Member'}</p>
-            <p className="truncate text-[10.5px] text-slate-500">{user?.email ?? ''}</p>
+            <p className="truncate text-[12px] font-medium text-white">{user?.name ?? 'Member'}</p>
+            <p className="truncate text-[10px] text-slate-500">{user?.email ?? ''}</p>
           </div>
           <button
             type="button"
@@ -260,7 +273,7 @@ export function DashboardShell() {
   return (
     <div className="flex min-h-screen bg-ink-950 text-white">
       {/* Desktop sidebar */}
-      <aside className="hidden w-[248px] shrink-0 border-r border-white/[0.06] bg-ink-900/60 lg:block">
+      <aside className="hidden w-[244px] shrink-0 border-r border-white/[0.06] bg-ink-900/50 lg:block">
         <div className="sticky top-0 h-screen">{sidebar}</div>
       </aside>
 
@@ -268,12 +281,12 @@ export function DashboardShell() {
       {mobileOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-ink-950/80 backdrop-blur-sm" onClick={() => setMobileOpen(false)} aria-hidden />
-          <aside className="gw-rise relative h-full w-[280px] border-r border-white/[0.08] bg-ink-900">{sidebar}</aside>
+          <aside className="gw-rise relative h-full w-[282px] border-r border-white/[0.08] bg-ink-900">{sidebar}</aside>
         </div>
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 shrink-0 items-center gap-3 border-b border-white/[0.06] bg-ink-950/85 px-4 backdrop-blur-xl sm:px-6">
+        <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b border-white/[0.06] bg-ink-950/85 px-4 backdrop-blur-xl sm:px-6">
           <button
             type="button"
             onClick={() => setMobileOpen(true)}
@@ -284,8 +297,9 @@ export function DashboardShell() {
           </button>
 
           <div className="min-w-0 flex-1">
-            <p className="truncate text-[13px] font-medium text-slate-300">
-              {role ? ROLE_LABEL[role] : ''} workspace
+            <p className="flex items-center gap-2 text-[12px] font-medium text-slate-400">
+              <span className="gw-live-dot" />
+              <span className="gw-mono text-slate-500">{role ? ROLE_LABEL[role] : ''} workspace</span>
             </p>
           </div>
 

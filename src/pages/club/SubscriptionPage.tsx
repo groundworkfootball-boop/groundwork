@@ -1,180 +1,243 @@
-import { useState, useEffect } from 'react';
-import { useToast } from '../../lib/toast';
+import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { doc, getDoc } from 'firebase/firestore';
+import { Check, CreditCard, ExternalLink, Info, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { useToast } from '../../lib/toast';
 import { db } from '../../lib/firebase';
-import { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
-import { Check, Loader2 } from 'lucide-react';
+import { PageHeader } from '../../components/ui/PageHeader';
+import { Card } from '../../components/ui/Card';
+import { Badge } from '../../components/ui/Badge';
+import { Button } from '../../components/ui/Button';
+import { ErrorState } from '../../components/ui/EmptyState';
+import { DashboardSkeleton } from '../../components/ui/Skeleton';
+import {
+  CLUB_PLANS,
+  openBillingPortal,
+  startClubSubscription,
+  type PlanDefinition,
+} from '../../lib/services/paymentService';
+import { cn } from '../../components/ui/cn';
+
+interface ClubBillingState {
+  tier: 'free' | 'standard' | 'premium';
+  status: string;
+  renewsAt?: string | null;
+}
 
 export const SubscriptionPage = () => {
   const { user } = useAuth();
-  const { success, error: toastError } = useToast();
-  const [currentTier, setCurrentTier] = useState<'free' | 'standard' | 'premium'>('standard');
-  const [billing, setBilling] = useState(false);
+  const { success, error: toastError, info } = useToast();
+  const [searchParams] = useSearchParams();
 
-  useEffect(() => {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busyPlan, setBusyPlan] = useState<string | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [billing, setBilling] = useState<ClubBillingState>({ tier: 'free', status: 'inactive' });
+
+  const load = useCallback(async () => {
     if (!user?.uid) return;
-    const loadClubPlan = async () => {
-      try {
-        const snap = await getDoc(doc(db, 'clubs', user.uid));
-        if (snap.exists()) {
-          const data = snap.data();
-          if (data.subscriptionTier) {
-            setCurrentTier(data.subscriptionTier);
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to load club subscription:', err);
-      }
-    };
-    loadClubPlan();
+    setLoading(true);
+    setError(null);
+    try {
+      const snap = await getDoc(doc(db, 'clubs', user.uid));
+      const data = snap.exists() ? snap.data() : {};
+      const tier = (data.subscriptionTier as ClubBillingState['tier']) ?? 'free';
+      setBilling({
+        tier: ['free', 'standard', 'premium'].includes(tier) ? tier : 'free',
+        status: (data.subscriptionStatus as string) ?? 'inactive',
+        renewsAt:
+          typeof data.subscriptionCurrentPeriodEndMs === 'number'
+            ? new Date(data.subscriptionCurrentPeriodEndMs).toLocaleDateString('en-GB', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+              })
+            : null,
+      });
+    } catch (err) {
+      console.error(err);
+      setError('We could not load your billing state. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   }, [user?.uid]);
 
-  const handleSelectPlan = async (tier: 'free' | 'standard' | 'premium') => {
-    if (!user?.uid) return;
-    setBilling(true);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    const status = searchParams.get('status');
+    if (status === 'success') {
+      success('Payment confirmed. Your plan activates once Stripe confirms the webhook.');
+      void load();
+    }
+    if (status === 'cancelled') info('Checkout cancelled. No charge was made.');
+  }, [searchParams, success, info, load]);
+
+  const handleSelect = async (plan: PlanDefinition) => {
+    if (!user?.uid || plan.id === 'free') return;
+    setBusyPlan(plan.id);
     try {
-      await updateDoc(doc(db, 'clubs', user.uid), {
-        subscriptionTier: tier,
-        subscriptionStatus: 'active',
-        updatedAt: serverTimestamp(),
-      });
-
-      if (tier !== 'free') {
-        const prices = { standard: 4900, premium: 14900 };
-        await addDoc(collection(db, 'payments'), {
-          clubId: user.uid,
-          amount: prices[tier],
-          currency: 'gbp',
-          status: 'succeeded',
-          type: 'subscription',
-          plan: tier,
-          createdAt: serverTimestamp(),
-        });
+      const result = await startClubSubscription(user.uid, plan.id as 'standard' | 'premium');
+      if (result.url) {
+        window.location.href = result.url;
+        return;
       }
-
-      setCurrentTier(tier);
-      success(`Updated club recruitment subscription to ${tier.toUpperCase()} tier!`);
+      info(result.message);
+      void load();
     } catch (err) {
-      toastError('Failed to process club subscription update.');
+      console.error(err);
+      toastError('We could not start checkout. Please try again in a moment.');
     } finally {
-      setBilling(false);
+      setBusyPlan(null);
     }
   };
 
-  const plans = [
-    {
-      id: 'free',
-      name: 'Free Scout',
-      price: '£0',
-      period: 'forever',
-      description: 'Baseline platform access for grassroot scouts and community clubs.',
-      features: [
-        '3 Active Opportunity Listings',
-        'Adult Player Search & Discovery',
-        'Basic Deterministic Match Scores',
-        'Direct Candidate Inquiries',
-      ],
-    },
-    {
-      id: 'standard',
-      name: 'Club Pro',
-      price: '£49',
-      period: 'per month',
-      description: 'Ideal for semi-pro and academy teams building dedicated recruitment pipelines.',
-      features: [
-        'Unlimited Opportunity Listings',
-        'Youth Scouting Access (Requires Cert)',
-        'Full 6-Weight Deterministic Breakdowns',
-        'AI Squad Gap Analysis',
-        'Priority Trial Scheduling System',
-        'Unique Club Code & Multi-Platform Invites',
-      ],
-      popular: true,
-    },
-    {
-      id: 'premium',
-      name: 'Elite Academy',
-      price: '£149',
-      period: 'per month',
-      description: 'Full-spectrum recruitment suite for professional academies and multi-team setups.',
-      features: [
-        'Everything in Club Pro',
-        'Continuous Deterministic Recalculation',
-        'Multi-Staff Scout Accounts',
-        'Listing Visibility Boosts Included',
-        'Advanced Recruitment Conversion Funnel',
-        'Dedicated Safeguarding Compliance Officer',
-      ],
-    },
-  ];
+  const handlePortal = async () => {
+    setPortalLoading(true);
+    try {
+      const url = await openBillingPortal();
+      if (url) window.location.href = url;
+      else info('No billing account yet. Start a plan first.');
+    } catch (err) {
+      console.error(err);
+      toastError('We could not open the billing portal.');
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  if (loading) return <DashboardSkeleton />;
+  if (error) return <ErrorState description={error} onRetry={load} />;
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-12">
-      <div className="text-center max-w-2xl mx-auto">
-        <span className="text-brand font-bold text-xs uppercase tracking-widest">Pricing & Subscriptions</span>
-        <h1 className="text-3xl font-black uppercase text-white tracking-tight mt-1">Club Recruitment Plans</h1>
-        <p className="text-sm text-slate-400 mt-2">
-          Transparent subscriptions built for clubs at every tier of the football pyramid.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4">
-        {plans.map((p) => (
-          <div
-            key={p.id}
-            className={`rounded-3xl p-8 flex flex-col justify-between transition-all relative ${
-              p.popular
-                ? 'bg-slate-900/90 border-2 border-brand shadow-2xl shadow-brand/10'
-                : 'bg-slate-900/70 border border-white/10'
-            }`}
-          >
-            {p.popular && (
-              <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-brand text-black text-xs font-black px-4 py-1 rounded-full uppercase tracking-wider">
-                Most Popular
-              </div>
-            )}
-
-            <div>
-              <h2 className="text-xl font-bold text-white mb-1">{p.name}</h2>
-              <p className="text-xs text-slate-400 mb-6">{p.description}</p>
-
-              <div className="flex items-baseline gap-1 mb-6">
-                <span className="text-4xl font-black text-white">{p.price}</span>
-                <span className="text-xs text-slate-400">/{p.period}</span>
-              </div>
-
-              <div className="space-y-3 mb-8">
-                {p.features.map((f) => (
-                  <div key={f} className="flex items-center gap-2.5 text-xs text-slate-300">
-                    <Check className="w-4 h-4 text-brand shrink-0" />
-                    <span>{f}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <button
-              onClick={() => handleSelectPlan(p.id as typeof currentTier)}
-              disabled={billing || currentTier === p.id}
-              className={`w-full py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 ${
-                currentTier === p.id
-                  ? 'bg-white/10 text-slate-400 cursor-default'
-                  : p.popular
-                  ? 'bg-brand hover:bg-brand-hover text-black shadow-lg shadow-brand/20'
-                  : 'bg-white/5 hover:bg-white/10 text-white border border-white/10'
-              }`}
+    <div className="space-y-6 pb-10">
+      <PageHeader
+        eyebrow="Club account"
+        title="Recruitment plans"
+        description="Stripe is authoritative for payment state — a plan change only takes effect once the webhook confirms it."
+        actions={
+          billing.tier !== 'free' ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handlePortal}
+              loading={portalLoading}
+              iconLeft={<ExternalLink className="h-3.5 w-3.5" />}
             >
-              {billing && currentTier !== p.id ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : currentTier === p.id ? (
-                'Current Plan'
-              ) : (
-                'Upgrade Plan'
-              )}
-            </button>
+              Manage billing
+            </Button>
+          ) : undefined
+        }
+      />
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-brand/25 bg-brand/10 text-brand">
+              <CreditCard className="h-4 w-4" />
+            </span>
+            <div>
+              <p className="gw-mono text-slate-500">Current plan</p>
+              <p className="text-[15px] font-semibold capitalize text-white">
+                {billing.tier === 'free' ? 'Free Scout' : billing.tier}
+              </p>
+            </div>
           </div>
-        ))}
+          <Badge
+            tone={billing.status === 'active' ? 'emerald' : billing.status === 'past_due' ? 'amber' : 'slate'}
+            dot
+          >
+            {billing.status.replace(/_/g, ' ')}
+          </Badge>
+        </div>
+        {billing.renewsAt ? (
+          <p className="mt-3 text-[12px] text-slate-500">Current period ends {billing.renewsAt}</p>
+        ) : null}
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        {CLUB_PLANS.map((plan) => {
+          const isCurrent = plan.id === billing.tier;
+          const isBusy = busyPlan === plan.id;
+          return (
+            <div
+              key={plan.id}
+              className={cn(
+                'relative flex flex-col rounded-2xl border p-6 transition-colors',
+                isCurrent ? 'border-brand/40 bg-brand/[0.06]' : 'gw-tilt-hover border-white/[0.08] bg-white/[0.025]',
+              )}
+            >
+              {plan.popular ? (
+                <span className="absolute -top-2.5 left-6 rounded-full border border-brand/40 bg-ink-950 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-brand">
+                  Most popular
+                </span>
+              ) : null}
+
+              <h3 className="text-[15px] font-semibold text-white">{plan.name}</h3>
+              <p className="mt-1 min-h-[36px] text-[12.5px] leading-relaxed text-slate-400">{plan.description}</p>
+
+              <div className="mt-4 flex items-baseline gap-1.5">
+                <span className="gw-numeric text-[32px] font-bold leading-none text-white">{plan.price}</span>
+                <span className="text-[12px] text-slate-500">/ {plan.period}</span>
+              </div>
+
+              <ul className="mt-5 flex-1 space-y-2.5">
+                {plan.features.map((feature) => (
+                  <li key={feature} className="flex items-start gap-2 text-[12.5px] leading-relaxed text-slate-300">
+                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand" />
+                    {feature}
+                  </li>
+                ))}
+              </ul>
+
+              <Button
+                className="mt-6"
+                fullWidth
+                variant={isCurrent ? 'secondary' : plan.popular ? 'primary' : 'outline'}
+                disabled={isCurrent || plan.id === 'free'}
+                loading={isBusy}
+                onClick={() => handleSelect(plan)}
+              >
+                {isCurrent ? 'Current plan' : plan.id === 'free' ? 'Included' : 'Choose plan'}
+              </Button>
+            </div>
+          );
+        })}
       </div>
+
+      <Card variant="flat">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 text-brand">
+            <ShieldCheck className="h-4 w-4" />
+          </span>
+          <div className="text-[12.5px] leading-relaxed text-slate-400">
+            <p className="font-semibold text-slate-200">Payment integrity</p>
+            <p className="mt-1">
+              Prices resolve server-side from a catalogue key. The browser never sends an amount, and duplicate Stripe
+              webhooks are ignored via an idempotency claim on the event ID.
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      <Card variant="flat">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 text-sky-300">
+            <Info className="h-4 w-4" />
+          </span>
+          <div className="text-[12.5px] leading-relaxed text-slate-400">
+            <p className="font-semibold text-slate-200">Running on the free Firebase plan?</p>
+            <p className="mt-1">
+              Cloud Functions require Blaze. Until they are deployed, plan selection records a request for a finance
+              admin to activate — the client never grants itself an entitlement.
+            </p>
+          </div>
+        </div>
+      </Card>
     </div>
   );
 };

@@ -73,6 +73,9 @@ export const createAccount = onCall(async (request) => {
         playingLevel: extra.playingLevel,
         region: extra.region,
         availability: extra.availability ?? [],
+        // Denormalised for the guardian read rule (`guardianEmail == token.email`).
+        guardianEmail: isYouth ? String(extra.guardianEmail ?? '').toLowerCase().trim() : null,
+        guardianName: isYouth ? String(extra.guardianName ?? '') : null,
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
         updatedAtMs: Date.now(),

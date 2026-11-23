@@ -108,15 +108,17 @@ export const getAIRecommendations = onCall(async (request) => {
   );
   const recommendations: AIRecommendation[] = candidates.map((c) => {
     const model = byId.get(c.playerId);
-    const reasons = Array.isArray(model?.reasons)
-      ? (model?.reasons as unknown[]).filter((x): x is string => typeof x === 'string').slice(0, 3)
+    const modelReasons = model?.reasons;
+    const modelHeadline = model?.headline;
+    const reasons = Array.isArray(modelReasons)
+      ? modelReasons.filter((x: unknown): x is string => typeof x === 'string').slice(0, 3)
       : [`Match score ${Math.round(c.matchScore * 100)}%`];
     return {
       playerId: c.playerId,
       displayName: String(c.profile.displayName ?? 'Player'),
       headline:
-        typeof model?.headline === 'string' && model.headline.length > 0
-          ? model.headline.slice(0, 300)
+        typeof modelHeadline === 'string' && modelHeadline.length > 0
+          ? modelHeadline.slice(0, 300)
           : `Ranked candidate (${Math.round(c.matchScore * 100)}% match)`,
       reasons,
     };
