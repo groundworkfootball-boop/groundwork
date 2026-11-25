@@ -1,4 +1,4 @@
-export declare const NOTIFICATION_TYPES: readonly ["application_received", "application_status_changed", "shortlisted", "trial_invitation", "trial_reminder", "guardian_consent", "verification_status", "subscription", "payment", "boost", "ai_recommendation", "system_notification"];
+export declare const NOTIFICATION_TYPES: readonly ["application_received", "application_status_changed", "shortlisted", "trial_invitation", "trial_reminder", "guardian_consent", "verification_status", "subscription", "payment", "boost", "ai_recommendation", "system_notification", "system"];
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 export interface CreateNotificationInput {
     userId: string;
@@ -14,6 +14,7 @@ export interface CreateNotificationInput {
  * that in-app + email channels are consistent and audited.
  */
 export declare function createNotification(input: CreateNotificationInput): Promise<string>;
+export declare const sendNotification: typeof createNotification;
 export interface EmailPayload {
     to: string;
     subject: string;

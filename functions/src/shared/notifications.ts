@@ -14,6 +14,7 @@ export const NOTIFICATION_TYPES = [
   'boost',
   'ai_recommendation',
   'system_notification',
+  'system',
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -58,6 +59,8 @@ export async function createNotification(input: CreateNotificationInput): Promis
   }
   return ref.id;
 }
+
+export const sendNotification = createNotification;
 
 function simpleHtml(title: string, body: string): string {
   const safe = (s: string) => s.replace(/</g, '&lt;').replace(/>/g, '&gt;');

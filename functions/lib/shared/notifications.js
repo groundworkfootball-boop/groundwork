@@ -13,6 +13,7 @@ export const NOTIFICATION_TYPES = [
     'boost',
     'ai_recommendation',
     'system_notification',
+    'system',
 ];
 /**
  * Server-side notification create. All privileged events route through here so
@@ -45,6 +46,7 @@ export async function createNotification(input) {
     }
     return ref.id;
 }
+export const sendNotification = createNotification;
 function simpleHtml(title, body) {
     const safe = (s) => s.replace(/</g, '&lt;').replace(/>/g, '&gt;');
     return `<div style="font-family:Inter,sans-serif;background:#0b1121;padding:24px;border-radius:12px">

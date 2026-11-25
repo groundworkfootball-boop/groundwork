@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "lint": "eslint .",
     "serve": "firebase emulators:start --only functions",
-    "test": "node --experimental-strip-types --test src/**/*.test.ts"
+    "test": "node --test lib/**/*.test.js"
   },
   "dependencies": {
     "firebase-admin": "^13.6.0",

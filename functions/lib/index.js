@@ -14,8 +14,12 @@ setGlobalOptions({
     timeoutSeconds: 60,
 });
 // Auth
-export { setUserRoleClaims, adminSetUserRole, adminGetUserClaims } from './auth/claims.js';
+export { setUserRoleClaims, adminSetUserRole, adminGetUserClaims, adminSuspendUser } from './auth/claims.js';
 export { createAccount, syncClaimsOnUserCreated } from './auth/registration.js';
+// Admin operations, GDPR & Moderation
+export { submitGdprRequest, adminProcessGdprRequest, createModerationReport, adminModerateReport, adminUpdatePlatformSettings, } from './admin/operations.js';
+// Recruitment & safeguarded messaging
+export { sendSafeguardedMessage, respondToTrial } from './recruitment/actions.js';
 // Safeguarding
 export { sendConsentInvite, grantConsent, withdrawConsent, reGrantConsent, onConsentChange, } from './safeguarding/consent.js';
 export { linkGuardianYouth, grantConsentInApp, issueConsentToken, } from './safeguarding/guardianLink.js';

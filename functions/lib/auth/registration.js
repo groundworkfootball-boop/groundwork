@@ -159,11 +159,18 @@ export function isUnder18(dob) {
         age -= 1;
     return age < 18;
 }
-/** Sync custom claims whenever the users/{uid} document is created. */
+/**
+ * Sync custom claims whenever a non-admin `users/{uid}` document is created.
+ * Admin claims are NEVER granted from a Firestore document write.
+ */
 export const syncClaimsOnUserCreated = onDocumentCreated('users/{userId}', async (event) => {
     const data = event.data?.data() ?? {};
     const role = data.role;
-    if (!['player', 'guardian', 'club', 'admin'].includes(role ?? ''))
+    if (!['player', 'guardian', 'club'].includes(role ?? ''))
+        return;
+    const userRecord = await adminAuth.getUser(event.params.userId).catch(() => null);
+    const existing = (userRecord?.customClaims ?? {});
+    if (existing.role)
         return;
     await adminAuth.setCustomUserClaims(event.params.userId, { role });
 });

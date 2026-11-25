@@ -1,7 +1,7 @@
 import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../shared/firebaseAdmin.js';
-import { requireRole, requireAdminToken, requireUid } from '../shared/authz.js';
+import { requireRole, requireAdmin, requireUid } from '../shared/authz.js';
 import { writeAuditLog } from '../shared/audit.js';
 import { enqueueMatchJob } from '../matching/queue.js';
 /** Fields a club may update on its own profile (never verification fields). */
@@ -95,7 +95,7 @@ export const submitVerification = onCall(async (request) => {
 });
 /** Admin approves or rejects a club verification request. */
 export const reviewVerification = onCall(async (request) => {
-    const adminUid = requireAdminToken(request);
+    const adminUid = await requireAdmin(request, ['isSuperAdmin', 'isSafeguardingAdmin']);
     const { requestId, decision, rejectReason, grantYouthVerification, youthVerificationExpiresAtMs } = (request.data ?? {});
     if (!requestId || typeof requestId !== 'string') {
         throw new HttpsError('invalid-argument', 'requestId is required.');
@@ -162,7 +162,7 @@ export const reviewVerification = onCall(async (request) => {
 });
 /** Admin suspends or reinstates a club (suspension removes it from matching). */
 export const suspendClub = onCall(async (request) => {
-    const adminUid = requireAdminToken(request);
+    const adminUid = await requireAdmin(request, ['isSuperAdmin', 'isModerator', 'isSafeguardingAdmin']);
     const { clubId, suspend, reason } = (request.data ?? {});
     if (!clubId || typeof clubId !== 'string') {
         throw new HttpsError('invalid-argument', 'clubId is required.');

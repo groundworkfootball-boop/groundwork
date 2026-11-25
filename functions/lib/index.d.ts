@@ -1,5 +1,7 @@
-export { setUserRoleClaims, adminSetUserRole, adminGetUserClaims } from './auth/claims.js';
+export { setUserRoleClaims, adminSetUserRole, adminGetUserClaims, adminSuspendUser } from './auth/claims.js';
 export { createAccount, syncClaimsOnUserCreated } from './auth/registration.js';
+export { submitGdprRequest, adminProcessGdprRequest, createModerationReport, adminModerateReport, adminUpdatePlatformSettings, } from './admin/operations.js';
+export { sendSafeguardedMessage, respondToTrial } from './recruitment/actions.js';
 export { sendConsentInvite, grantConsent, withdrawConsent, reGrantConsent, onConsentChange, } from './safeguarding/consent.js';
 export { linkGuardianYouth, grantConsentInApp, issueConsentToken, } from './safeguarding/guardianLink.js';
 export { updateMatchingConfig, getMatchingConfigState } from './matching/configs.js';
