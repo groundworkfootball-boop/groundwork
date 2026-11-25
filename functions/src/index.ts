@@ -1,4 +1,4 @@
-﻿import { setGlobalOptions } from 'firebase-functions/v2';
+import { setGlobalOptions } from 'firebase-functions/v2';
 
 // All callables and triggers deploy to the same region the web client targets.
 // Without this, v2 functions default to us-central1 while the client calls
@@ -16,8 +16,20 @@ setGlobalOptions({
 });
 
 // Auth
-export { setUserRoleClaims, adminSetUserRole, adminGetUserClaims } from './auth/claims.js';
+export { setUserRoleClaims, adminSetUserRole, adminGetUserClaims, adminSuspendUser } from './auth/claims.js';
 export { createAccount, syncClaimsOnUserCreated } from './auth/registration.js';
+
+// Admin operations, GDPR & Moderation
+export {
+  submitGdprRequest,
+  adminProcessGdprRequest,
+  createModerationReport,
+  adminModerateReport,
+  adminUpdatePlatformSettings,
+} from './admin/operations.js';
+
+// Recruitment & safeguarded messaging
+export { sendSafeguardedMessage, respondToTrial } from './recruitment/actions.js';
 
 // Safeguarding
 export {

@@ -1,9 +1,10 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProviders } from './app/providers';
-import { useAuth } from './context/AuthContext';
+import { useAuth, type AdminFlags, type Role } from './context/AuthContext';
 import { DashboardShell } from './components/layout/DashboardShell';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ShieldAlert } from 'lucide-react';
+import { ButtonLink } from './components/ui/Button';
 
 const LandingPage = lazy(() => import('./pages/public/LandingPage').then((m) => ({ default: m.LandingPage })));
 const AboutPage = lazy(() => import('./pages/public/AboutPage').then((m) => ({ default: m.AboutPage })));
@@ -101,24 +102,59 @@ function FullPageLoader() {
   );
 }
 
-function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles?: string[] }) {
-  const { isAuthenticated, role, loading } = useAuth();
+function AccessDeniedPanel({ reason }: { reason: string }) {
+  return (
+    <div className="mx-auto max-w-lg py-16 text-center">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-400">
+        <ShieldAlert className="h-6 w-6" />
+      </div>
+      <h2 className="mt-4 text-[18px] font-bold text-white">Access restricted</h2>
+      <p className="mt-2 text-[13px] leading-relaxed text-slate-400">{reason}</p>
+      <div className="mt-6 flex justify-center">
+        <ButtonLink to="/dashboard" size="sm" variant="secondary">
+          Return to workspace
+        </ButtonLink>
+      </div>
+    </div>
+  );
+}
+
+function ProtectedRoute({
+  children,
+  allowedRoles,
+  requiredAdminFlags,
+}: {
+  children: React.ReactNode;
+  allowedRoles?: Role[];
+  requiredAdminFlags?: Array<keyof AdminFlags>;
+}) {
+  const { isAuthenticated, role, adminFlags, loading } = useAuth();
 
   if (loading) return <FullPageLoader />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (allowedRoles && role && !allowedRoles.includes(role)) return <Navigate to="/dashboard" replace />;
+  if (allowedRoles && (!role || !allowedRoles.includes(role))) {
+    return <Navigate to="/dashboard" replace />;
+  }
+  if (requiredAdminFlags && requiredAdminFlags.length > 0) {
+    const allowed =
+      adminFlags.isSuperAdmin || requiredAdminFlags.some((flag) => adminFlags[flag]);
+    if (!allowed) {
+      return (
+        <AccessDeniedPanel
+          reason={`This console requires authoritative custom claims (${requiredAdminFlags.join(' or ')}). Server-side rules enforce this boundary independently.`}
+        />
+      );
+    }
+  }
   return <>{children}</>;
 }
 
-/**
- * Picks the correct guided setup for the signed-in role. Kept inside the app so
- * the onboarding bundle is only downloaded when it is actually needed.
- */
 function RoleOnboardingRoute() {
   const { role } = useAuth();
 
   if (role === 'club') return <ClubOnboardingFlow />;
   if (role === 'guardian') return <Navigate to="/onboarding/guardian" replace />;
+  if (role === 'admin') return <Navigate to="/dashboard" replace />;
   return <OnboardingPage />;
 }
 
@@ -128,136 +164,507 @@ function App() {
       <BrowserRouter>
         <Suspense fallback={<FullPageLoader />}>
           <Routes>
-              {/* Public */}
-              <Route path="/" element={<LandingPage />} />
-              <Route path="/about" element={<AboutPage />} />
-              <Route path="/how-it-works" element={<HowItWorksPage />} />
-              <Route path="/clubs" element={<PublicClubsPage />} />
-              <Route path="/players" element={<PublicPlayersPage />} />
-              <Route path="/pricing" element={<PricingPage />} />
-              <Route path="/contact" element={<ContactPage />} />
-              <Route path="/privacy" element={<PrivacyPage />} />
-              <Route path="/terms" element={<TermsPage />} />
-              <Route path="/safeguarding" element={<SafeguardingPage />} />
+            {/* Public */}
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/how-it-works" element={<HowItWorksPage />} />
+            <Route path="/clubs" element={<PublicClubsPage />} />
+            <Route path="/players" element={<PublicPlayersPage />} />
+            <Route path="/pricing" element={<PricingPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/terms" element={<TermsPage />} />
+            <Route path="/safeguarding" element={<SafeguardingPage />} />
 
-              {/* Auth */}
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
-              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-              <Route path="/verify-email" element={<VerifyEmailPage />} />
-              <Route path="/reset-password" element={<ResetPasswordPage />} />
+            {/* Auth */}
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/verify-email" element={<VerifyEmailPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-              {/* Guided first-run onboarding */}
+            {/* Guided first-run onboarding */}
+            <Route
+              path="/onboarding"
+              element={
+                <ProtectedRoute>
+                  <RoleOnboardingRoute />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/onboarding/guardian"
+              element={
+                <ProtectedRoute allowedRoles={['guardian']}>
+                  <GuardianOnboardingPage />
+                </ProtectedRoute>
+              }
+            />
+
+            {/* Authenticated workspace */}
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <DashboardShell />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<Dashboard />} />
+
+              {/* Shared Player + Club */}
               <Route
-                path="/onboarding"
+                path="applications"
                 element={
-                  <ProtectedRoute>
-                    <RoleOnboardingRoute />
+                  <ProtectedRoute allowedRoles={['player', 'club', 'admin']}>
+                    <PlayerApplicationsPage />
                   </ProtectedRoute>
                 }
               />
               <Route
-                path="/onboarding/guardian"
+                path="trial-manager"
                 element={
-                  <ProtectedRoute>
-                    <GuardianOnboardingPage />
+                  <ProtectedRoute allowedRoles={['player', 'club', 'admin']}>
+                    <TrialManager />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="notifications" element={<PlayerNotificationsPage />} />
+
+              {/* Player */}
+              <Route
+                path="opportunities"
+                element={
+                  <ProtectedRoute allowedRoles={['player']}>
+                    <PlayerOpportunitiesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="opportunities/:id"
+                element={
+                  <ProtectedRoute allowedRoles={['player']}>
+                    <OpportunityDetailsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="opportunity/:id"
+                element={
+                  <ProtectedRoute allowedRoles={['player']}>
+                    <OpportunityDetailsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="profile"
+                element={
+                  <ProtectedRoute allowedRoles={['player']}>
+                    <PlayerProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="player/profile-builder"
+                element={
+                  <ProtectedRoute allowedRoles={['player']}>
+                    <ProfileBuilderPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="videos"
+                element={
+                  <ProtectedRoute allowedRoles={['player']}>
+                    <PlayerVideosPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="video/:id"
+                element={
+                  <ProtectedRoute allowedRoles={['player', 'club', 'admin']}>
+                    <VideoDetailsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="recommendations"
+                element={
+                  <ProtectedRoute allowedRoles={['player']}>
+                    <RecommendationsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="settings"
+                element={
+                  <ProtectedRoute allowedRoles={['player']}>
+                    <PlayerSettingsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="subscription"
+                element={
+                  <ProtectedRoute allowedRoles={['player']}>
+                    <PlayerSubscriptionPage />
                   </ProtectedRoute>
                 }
               />
 
-              {/* Authenticated workspace */}
+              {/* Guardian */}
               <Route
-                path="/dashboard"
+                path="guardian"
                 element={
-                  <ProtectedRoute>
-                    <DashboardShell />
+                  <ProtectedRoute allowedRoles={['guardian']}>
+                    <GuardianDashboardPage />
                   </ProtectedRoute>
                 }
-              >
-                <Route index element={<Dashboard />} />
+              />
+              <Route
+                path="guardian/youth-profile"
+                element={
+                  <ProtectedRoute allowedRoles={['guardian']}>
+                    <YouthProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="guardian/consent"
+                element={
+                  <ProtectedRoute allowedRoles={['guardian']}>
+                    <ConsentPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="guardian/consent-history"
+                element={
+                  <ProtectedRoute allowedRoles={['guardian']}>
+                    <ConsentHistoryPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="guardian/settings"
+                element={
+                  <ProtectedRoute allowedRoles={['guardian']}>
+                    <GuardianSettingsPage />
+                  </ProtectedRoute>
+                }
+              />
 
-                {/* Player */}
-                <Route path="opportunities" element={<PlayerOpportunitiesPage />} />
-                <Route path="opportunities/:id" element={<OpportunityDetailsPage />} />
-                <Route path="opportunity/:id" element={<OpportunityDetailsPage />} />
-                <Route path="shortlist" element={<PlayerShortlistsPage />} />
-                <Route path="applications" element={<PlayerApplicationsPage />} />
-                <Route path="profile" element={<PlayerProfilePage />} />
-                <Route path="player/profile-builder" element={<ProfileBuilderPage />} />
-                <Route path="videos" element={<PlayerVideosPage />} />
-                <Route path="video/:id" element={<VideoDetailsPage />} />
-                <Route path="recommendations" element={<RecommendationsPage />} />
-                <Route path="notifications" element={<PlayerNotificationsPage />} />
-                <Route path="settings" element={<PlayerSettingsPage />} />
-                <Route path="subscription" element={<PlayerSubscriptionPage />} />
+              {/* Club */}
+              <Route
+                path="search"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <SearchPlayersPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="shortlist"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <PlayerShortlistsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/profile"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <ClubProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/onboarding"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <ClubOnboardingPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/verification"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <VerificationPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/invites"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <ClubInvitesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/player/:id"
+                element={
+                  <ProtectedRoute allowedRoles={['club', 'admin']}>
+                    <ClubPlayerProfilePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/squad"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <SquadPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/squad-gaps"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <SquadGapAnalysisPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/shortlists"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <ClubShortlistsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/applications"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <ClubApplicationsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/trials"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <TrialsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/messages"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <MessagesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/analytics"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <AnalyticsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/subscription"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <ClubSubscriptionPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/boosts"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <BoostsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/notifications"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <ClubNotificationsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="club/settings"
+                element={
+                  <ProtectedRoute allowedRoles={['club']}>
+                    <ClubSettingsPage />
+                  </ProtectedRoute>
+                }
+              />
 
-                {/* Guardian */}
-                <Route path="guardian" element={<GuardianDashboardPage />} />
-                <Route path="guardian/youth-profile" element={<YouthProfilePage />} />
-                <Route path="guardian/consent" element={<ConsentPage />} />
-                <Route path="guardian/consent-history" element={<ConsentHistoryPage />} />
-                <Route path="guardian/settings" element={<GuardianSettingsPage />} />
+              {/* Admin */}
+              <Route
+                path="admin/dashboard"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']}>
+                    <AdminDashboardPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="users"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']} requiredAdminFlags={['isSuperAdmin', 'isModerator']}>
+                    <UsersList />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/players"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']} requiredAdminFlags={['isSuperAdmin', 'isModerator', 'isSafeguardingAdmin']}>
+                    <AdminPlayersPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/clubs"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']} requiredAdminFlags={['isSuperAdmin', 'isSafeguardingAdmin']}>
+                    <AdminClubsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/youth-verification"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']} requiredAdminFlags={['isSuperAdmin', 'isSafeguardingAdmin']}>
+                    <YouthVerificationPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/consent"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']} requiredAdminFlags={['isSuperAdmin', 'isSafeguardingAdmin']}>
+                    <ConsentManagementPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/moderation"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']} requiredAdminFlags={['isSuperAdmin', 'isModerator', 'isSafeguardingAdmin']}>
+                    <ModerationPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/reports"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']}>
+                    <ReportsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/payments"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']} requiredAdminFlags={['isSuperAdmin', 'isFinanceAdmin']}>
+                    <PaymentsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/subscriptions"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']} requiredAdminFlags={['isSuperAdmin', 'isFinanceAdmin']}>
+                    <SubscriptionsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/matching-config"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']} requiredAdminFlags={['isSuperAdmin']}>
+                    <MatchingConfigPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/ai"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']}>
+                    <AIManagementPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="audit-logs"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']}>
+                    <AuditLogsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/gdpr"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']} requiredAdminFlags={['isSuperAdmin', 'isSafeguardingAdmin', 'isFinanceAdmin']}>
+                    <GDPRPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/system-health"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']}>
+                    <SystemHealthPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/roles"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']} requiredAdminFlags={['isSuperAdmin']}>
+                    <AdminRolesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin/settings"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']} requiredAdminFlags={['isSuperAdmin']}>
+                    <AdminSettingsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="system-config"
+                element={
+                  <ProtectedRoute allowedRoles={['admin']} requiredAdminFlags={['isSuperAdmin']}>
+                    <SystemConfig />
+                  </ProtectedRoute>
+                }
+              />
+            </Route>
 
-                {/* Club */}
-                <Route path="search" element={<SearchPlayersPage />} />
-                <Route path="club/profile" element={<ClubProfilePage />} />
-                <Route path="club/onboarding" element={<ClubOnboardingPage />} />
-                <Route path="club/verification" element={<VerificationPage />} />
-                <Route path="club/invites" element={<ClubInvitesPage />} />
-                <Route path="club/player/:id" element={<ClubPlayerProfilePage />} />
-                <Route path="club/squad" element={<SquadPage />} />
-                <Route path="club/squad-gaps" element={<SquadGapAnalysisPage />} />
-                <Route path="club/shortlists" element={<ClubShortlistsPage />} />
-                <Route path="club/applications" element={<ClubApplicationsPage />} />
-                <Route path="club/trials" element={<TrialsPage />} />
-                <Route path="club/messages" element={<MessagesPage />} />
-                <Route path="club/analytics" element={<AnalyticsPage />} />
-                <Route path="club/subscription" element={<ClubSubscriptionPage />} />
-                <Route path="club/boosts" element={<BoostsPage />} />
-                <Route path="club/notifications" element={<ClubNotificationsPage />} />
-                <Route path="club/settings" element={<ClubSettingsPage />} />
-                <Route path="trial-manager" element={<TrialManager />} />
+            {/* Legacy redirects */}
+            <Route path="/opportunities" element={<Navigate to="/dashboard/opportunities" replace />} />
+            <Route path="/shortlist" element={<Navigate to="/dashboard/shortlist" replace />} />
+            <Route path="/profile" element={<Navigate to="/dashboard/profile" replace />} />
+            <Route path="/applications" element={<Navigate to="/dashboard/applications" replace />} />
+            <Route path="/trial-manager" element={<Navigate to="/dashboard/trial-manager" replace />} />
+            <Route path="/search" element={<Navigate to="/dashboard/search" replace />} />
+            <Route path="/users" element={<Navigate to="/dashboard/users" replace />} />
+            <Route path="/audit-logs" element={<Navigate to="/dashboard/audit-logs" replace />} />
+            <Route path="/system-config" element={<Navigate to="/dashboard/system-config" replace />} />
 
-                {/* Admin */}
-                <Route path="admin/dashboard" element={<AdminDashboardPage />} />
-                <Route path="users" element={<UsersList />} />
-                <Route path="admin/players" element={<AdminPlayersPage />} />
-                <Route path="admin/clubs" element={<AdminClubsPage />} />
-                <Route path="admin/youth-verification" element={<YouthVerificationPage />} />
-                <Route path="admin/consent" element={<ConsentManagementPage />} />
-                <Route path="admin/moderation" element={<ModerationPage />} />
-                <Route path="admin/reports" element={<ReportsPage />} />
-                <Route path="admin/payments" element={<PaymentsPage />} />
-                <Route path="admin/subscriptions" element={<SubscriptionsPage />} />
-                <Route path="admin/matching-config" element={<MatchingConfigPage />} />
-                <Route path="admin/ai" element={<AIManagementPage />} />
-                <Route path="audit-logs" element={<AuditLogsPage />} />
-                <Route path="admin/gdpr" element={<GDPRPage />} />
-                <Route path="admin/system-health" element={<SystemHealthPage />} />
-                <Route path="admin/roles" element={<AdminRolesPage />} />
-                <Route path="admin/settings" element={<AdminSettingsPage />} />
-                <Route path="system-config" element={<SystemConfig />} />
-              </Route>
-
-              {/* Legacy redirects */}
-              <Route path="/opportunities" element={<Navigate to="/dashboard/opportunities" replace />} />
-              <Route path="/shortlist" element={<Navigate to="/dashboard/shortlist" replace />} />
-              <Route path="/profile" element={<Navigate to="/dashboard/profile" replace />} />
-              <Route path="/applications" element={<Navigate to="/dashboard/applications" replace />} />
-              <Route path="/trial-manager" element={<Navigate to="/dashboard/trial-manager" replace />} />
-              <Route path="/search" element={<Navigate to="/dashboard/search" replace />} />
-              <Route path="/users" element={<Navigate to="/dashboard/users" replace />} />
-              <Route path="/audit-logs" element={<Navigate to="/dashboard/audit-logs" replace />} />
-              <Route path="/system-config" element={<Navigate to="/dashboard/system-config" replace />} />
-
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </Suspense>
-        </BrowserRouter>
-      </AppProviders>
-    );
-  }
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </Suspense>
+      </BrowserRouter>
+    </AppProviders>
+  );
+}
 
 export default App;
-
-

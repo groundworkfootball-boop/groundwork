@@ -2,7 +2,7 @@ import { type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Check, Loader2, Sparkles } from 'lucide-react';
 import { cn } from '../ui/cn';
-import { ParticleField } from '../visual/ParticleField';
+import { Hero3DPitchScene } from '../visual/Hero3DPitchScene';
 
 /* ─────────────────────────────────────────────────────────────────────────
    Progress rail — chunky, segmented, unmistakably "you're getting there"
@@ -273,18 +273,17 @@ export function OnboardingShell({
           </div>
         </div>
 
-        {/* Instrument panel */}
+        {/* Interactive 3D instrument panel */}
         <aside className="hidden lg:block">
-          <div className="gw-frame gw-scanlines sticky top-24 overflow-hidden rounded-2xl">
+          <div className="gw-frame sticky top-24 overflow-hidden rounded-2xl">
             <div className="relative h-[300px] overflow-hidden border-b border-white/[0.07] bg-ink-950">
-              <ParticleField count={1100} />
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_60%,transparent_20%,rgba(4,7,12,0.85)_78%)]" />
-              <div className="absolute left-3 top-3 flex items-center gap-1.5">
+              <Hero3DPitchScene />
+              <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-1.5">
                 <span className="gw-live-dot" />
-                <span className="gw-mono text-slate-400">Live engine</span>
+                <span className="gw-mono text-slate-300">3D engine</span>
               </div>
-              <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
-                <span className="gw-mono text-slate-500">Deterministic</span>
+              <div className="pointer-events-none absolute bottom-3 left-3 right-3 flex items-center justify-between">
+                <span className="gw-mono text-slate-400">Deterministic</span>
                 <span className="gw-mono text-brand">v{step}.0</span>
               </div>
             </div>
@@ -505,9 +504,14 @@ export function OnboardingComplete({
   return (
     <div className="relative min-h-screen overflow-hidden bg-ink-950 text-white">
       <div className="absolute inset-0">
-        <ParticleField count={2200} />
+        <img
+          src="/images/stadium-night.jpg"
+          alt=""
+          aria-hidden
+          className="h-full w-full object-cover opacity-25"
+        />
       </div>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_38%,rgba(182,255,26,0.14),transparent_58%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink-950/90 via-ink-950/75 to-ink-950" />
 
       <div className="relative z-10 mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center px-5 py-16 text-center">
         <div className="gw-pop mb-7 flex h-20 w-20 items-center justify-center rounded-3xl border border-brand/40 bg-brand/12">

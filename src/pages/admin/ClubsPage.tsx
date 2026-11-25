@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
-import { collection, getDocs, doc, updateDoc, serverTimestamp, addDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { Building2, ShieldCheck, Check, X, RefreshCw } from 'lucide-react';
-import { db, functions, auth } from '../../lib/firebase';
+import { db, functions } from '../../lib/firebase';
 import { useToast } from '../../lib/toast';
 import type { ClubRecord } from '../../app/types';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -92,14 +92,6 @@ export const ClubsPage = () => {
           youthVerificationExpiresAtMs: expiresAt ? expiresAt.getTime() : null,
           verificationReviewedAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        });
-        await addDoc(collection(db, 'auditLogs'), {
-          action: `club_verification_${decision}`,
-          resourceType: 'club',
-          resourceId: clubId,
-          actorId: auth.currentUser?.uid ?? null,
-          actorRole: 'admin',
-          timestamp: serverTimestamp(),
         });
       } catch (dbErr) {
         console.error(dbErr);

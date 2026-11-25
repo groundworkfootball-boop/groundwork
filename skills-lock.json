@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "skills": {
+    "anti-ui-slop": {
+      "source": "uizze.com",
+      "sourceUrl": "https://uizze.com",
+      "sourceType": "well-known",
+      "computedHash": "c16a8b493925981a5390ef47a5509e577ae14b4cb99c2c38ffc8a3b198005574",
+      "wellKnownDigest": "sha256:5d14bf92638b66bfe418da9f7bca0b28bee20f6a17571dd94ab3f93204a55465"
+    },
+    "ui-design": {
+      "source": "uizze.com",
+      "sourceUrl": "https://uizze.com",
+      "sourceType": "well-known",
+      "computedHash": "8e076746e5bd11ad7eb5350ad7b49566a896aa0acd3151dcde9383fe5b6625d1",
+      "wellKnownDigest": "sha256:eaa14cc7ba9d9b30676a480a12095996f33d2242532b5cc63d6f39a5635dd7ca"
+    },
+    "ui-radar": {
+      "source": "uizze.com",
+      "sourceUrl": "https://uizze.com",
+      "sourceType": "well-known",
+      "computedHash": "bc084bdbf1d84d997185e28c369cccf33b908d3bc0f26533f69fde80e8a5a262",
+      "wellKnownDigest": "sha256:045fb69530040cb2341f638ede807beb3be64aad06435e49636e62af89d0435d"
+    }
+  }
+}

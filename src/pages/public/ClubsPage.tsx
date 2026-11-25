@@ -3,12 +3,8 @@ import { PublicLayout, PublicPageHeader, Reveal } from '../../components/layout/
 import { ButtonLink } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { MatchScorePanel } from '../../components/ui/ScorePanel';
-import { RecruitmentIllustration } from '../../components/illustrations';
-import {
-  TacticsBoardIllustration,
-  CrestIllustration,
-  ScoutingRadarIllustration,
-} from '../../components/illustrations/football';
+import { MediaFrame } from '../../components/visual/MediaFrame';
+import { Hero3DPitchScene } from '../../components/visual/Hero3DPitchScene';
 
 const CAPABILITIES = [
   {
@@ -151,16 +147,22 @@ export const ClubsPage = () => {
           </Reveal>
 
           <Reveal delay={90} className="grid gap-4">
-            <div className="rounded-xl border border-white/[0.08] bg-ink-950/60 p-4">
-              <RecruitmentIllustration />
+            <div className="h-[260px] overflow-hidden rounded-2xl border border-white/[0.08] bg-ink-950">
+              <Hero3DPitchScene />
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="rounded-xl border border-white/[0.08] bg-ink-950/60 p-4">
-                <TacticsBoardIllustration />
-              </div>
-              <div className="rounded-xl border border-white/[0.08] bg-ink-950/60 p-4">
-                <ScoutingRadarIllustration />
-              </div>
+              <MediaFrame
+                src="/images/pitch-match.jpg"
+                alt="Aerial view of a live football match"
+                caption="Squad depth view"
+                tag="4-3-3"
+              />
+              <MediaFrame
+                src="/images/stadium-aerial.jpg"
+                alt="Illuminated stadium at night"
+                caption="Club verification"
+                tag="Audited"
+              />
             </div>
           </Reveal>
         </div>
@@ -178,8 +180,13 @@ export const ClubsPage = () => {
               Everything a recruitment team needs sits inside one club-scoped console, from first search to signed
               squad member.
             </p>
-            <div className="mt-7 rounded-xl border border-white/[0.08] bg-ink-950/60 p-4">
-              <CrestIllustration className="mx-auto max-h-56" />
+            <div className="mt-7">
+              <MediaFrame
+                src="/images/stadium-night.jpg"
+                alt="Club stadium under floodlights"
+                caption="Club recruitment workspace"
+                tag="Scoped access"
+              />
             </div>
           </Reveal>
 
@@ -236,8 +243,13 @@ export const ClubsPage = () => {
                 </ul>
               </div>
 
-              <div className="flex justify-center">
-                <CrestIllustration className="max-h-64" />
+              <div>
+                <MediaFrame
+                  src="/images/floodlights.jpg"
+                  alt="Stadium floodlight tower"
+                  caption="Safeguarding documentation review"
+                  tag="12-month cycle"
+                />
               </div>
             </div>
           </div>

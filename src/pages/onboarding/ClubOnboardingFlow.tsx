@@ -36,7 +36,7 @@ import {
   OnboardingShell,
   SliderField,
 } from '../../components/onboarding/OnboardingKit';
-import { CrestIllustration, PitchSlotIllustration, ScoutingRadarIllustration } from '../../components/illustrations/football';
+import { MediaFrame } from '../../components/visual/MediaFrame';
 
 const STEPS = ['Club identity', 'Recruitment targets', 'Operating shape', 'Confirm'];
 const TOTAL = STEPS.length;
@@ -347,10 +347,12 @@ export const ClubOnboardingFlow = () => {
             />
           </ArenaField>
 
-          <div className="grid grid-cols-2 gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
-            <CrestIllustration className="max-h-40" />
-            <PitchSlotIllustration className="self-center" />
-          </div>
+          <MediaFrame
+            src="/images/stadium-night.jpg"
+            alt="Football stadium under floodlights"
+            caption="Adult & youth verification unlock after onboarding"
+            tag="Club setup"
+          />
         </>
       ) : null}
 
@@ -407,9 +409,12 @@ export const ClubOnboardingFlow = () => {
             </div>
           </ArenaField>
 
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
-            <ScoutingRadarIllustration />
-          </div>
+          <MediaFrame
+            src="/images/pitch-match.jpg"
+            alt="Aerial view of football pitch"
+            caption="Targets feed the deterministic matching engine"
+            tag="Precomputed"
+          />
         </>
       ) : null}
 

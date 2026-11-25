@@ -13,7 +13,6 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { BOOST_PACKAGES, purchaseBoost } from '../../lib/services/paymentService';
 import { cn } from '../../components/ui/cn';
-import { TrophyIllustration } from '../../components/illustrations/football';
 
 interface BoostRow {
   id: string;
@@ -176,11 +175,6 @@ export const BoostsPage = () => {
           icon={<Clock className="h-6 w-6" />}
           title="No active boosts"
           description="Boosts run for a fixed window and then expire automatically. Nothing renews silently."
-          action={
-            <div className="flex justify-center">
-              <TrophyIllustration className="max-h-40" />
-            </div>
-          }
         />
       ) : null}
     </div>

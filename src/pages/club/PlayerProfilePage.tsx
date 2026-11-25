@@ -93,8 +93,8 @@ export const PlayerProfilePage = () => {
         );
         setIsShortlisted(!shortSnap.empty);
 
-        // Fetch private club note
-        const noteDoc = await getDoc(doc(db, 'clubNotes', `${user.uid}_${id}`));
+        // Fetch private club note (stored under clubs/{clubId}/private per security rules)
+        const noteDoc = await getDoc(doc(db, 'clubs', user.uid, 'private', `note_${id}`));
         if (noteDoc.exists()) {
           setClubNote(noteDoc.data().content || '');
         }
@@ -156,7 +156,7 @@ export const PlayerProfilePage = () => {
     if (!player || !user?.uid) return;
     setSavingNote(true);
     try {
-      await setDoc(doc(db, 'clubNotes', `${user.uid}_${player.id}`), {
+      await setDoc(doc(db, 'clubs', user.uid, 'private', `note_${player.id}`), {
         clubId: user.uid,
         playerId: player.id,
         content: clubNote,

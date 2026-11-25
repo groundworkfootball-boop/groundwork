@@ -1,10 +1,26 @@
-﻿import { cn } from '../ui/cn';
+﻿import { useRef } from 'react';
+import { cn } from '../ui/cn';
 
 /**
  * GROUNDWORK illustration set — hand-authored SVG.
  * Every shape is drawn explicitly: layered gradients, perspective geometry,
  * depth shadows and consistent hairlines. No third-party assets.
+ *
+ * Gradient ids are scoped per mounted instance so that rendering the same
+ * illustration twice cannot make one copy inherit the other's definitions via
+ * duplicate DOM ids.
  */
+
+let legacyIdSequence = 0;
+
+function useUid(prefix: string): string {
+  const ref = useRef<string | null>(null);
+  if (ref.current === null) {
+    legacyIdSequence += 1;
+    ref.current = `${prefix}${legacyIdSequence}-`;
+  }
+  return ref.current;
+}
 
 const HAIR = 'rgba(148,163,184,0.22)';
 const HAIR_SOFT = 'rgba(148,163,184,0.12)';
@@ -237,22 +253,23 @@ export function DossierIllustration({ className }: { className?: string }) {
    Safeguarding — layered shield with consent gate
    ───────────────────────────────────────────────────────────────────────── */
 export function SafeguardingIllustration({ className }: { className?: string }) {
+  const uid = useUid('sg');
   return (
     <svg viewBox="0 0 460 400" fill="none" className={cn('h-auto w-full', className)} aria-hidden>
       <defs>
-        <linearGradient id="sg-shield" x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id={`${uid}shield`} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="#34d399" stopOpacity="0.30" />
           <stop offset="55%" stopColor="#10b981" stopOpacity="0.10" />
           <stop offset="100%" stopColor="#059669" stopOpacity="0.03" />
         </linearGradient>
-        <radialGradient id="sg-glow" cx="0.5" cy="0.45" r="0.55">
+        <radialGradient id={`${uid}glow`} cx="0.5" cy="0.45" r="0.55">
           <stop offset="0%" stopColor="#34d399" stopOpacity="0.18" />
           <stop offset="100%" stopColor="#34d399" stopOpacity="0" />
         </radialGradient>
       </defs>
 
       <rect x="10" y="10" width="440" height="380" rx="18" fill="#0a1220" stroke={HAIR} />
-      <ellipse cx="230" cy="180" rx="180" ry="150" fill="url(#sg-glow)" />
+      <ellipse cx="230" cy="180" rx="180" ry="150" fill={`url(#${uid}glow)`} />
 
       {/* Concentric rings */}
       <circle cx="230" cy="172" r="118" stroke="#34d399" strokeOpacity="0.10" strokeWidth="1.5" />
@@ -262,7 +279,7 @@ export function SafeguardingIllustration({ className }: { className?: string }) 
       {/* Shield */}
       <path
         d="M230 78 L296 104 V166 C296 212 268 244 230 258 C192 244 164 212 164 166 V104 Z"
-        fill="url(#sg-shield)"
+        fill={`url(#${uid}shield)`}
         stroke="#34d399"
         strokeOpacity="0.7"
         strokeWidth="2"

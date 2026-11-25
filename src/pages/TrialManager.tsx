@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, MapPin, Clock, Loader2, AlertCircle, Plus, X, Save, Users, Target } from 'lucide-react';
+import { httpsCallable } from 'firebase/functions';
+import { ChevronLeft, ChevronRight, MapPin, Clock, Loader2, AlertCircle, Plus, X, Save, Users, Target, Check, Ban } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../lib/toast';
-import { db } from '../lib/firebase';
+import { db, functions } from '../lib/firebase';
 import {
   collection,
   query,
@@ -113,6 +114,25 @@ export const TrialManager = () => {
       toastError('Failed to create trial.');
     } finally {
       setSavingTrial(false);
+    }
+  };
+
+  const handleTrialDecision = async (trialId: string, decision: 'accepted' | 'declined') => {
+    try {
+      const callable = httpsCallable<{ trialId: string; decision: 'accepted' | 'declined' }, { ok: boolean }>(
+        functions,
+        'respondToTrial',
+      );
+      await callable({ trialId, decision });
+      setTrials((prev) =>
+        prev.map((t) =>
+          t.id === trialId ? { ...t, status: decision === 'accepted' ? 'confirmed' : 'declined' } : t,
+        ),
+      );
+      success(`Trial ${decision}.`);
+    } catch (err) {
+      console.error(err);
+      toastError('Could not submit trial response.');
     }
   };
 
@@ -324,10 +344,28 @@ export const TrialManager = () => {
                   </div>
                   {trial.status && (
                     <span className={`mt-2 inline-block px-2 py-0.5 border rounded text-[9px] font-bold uppercase tracking-widest ${
-                      trial.status === 'scheduled' ? 'border-brand/30 text-brand bg-brand/5' : 'border-dark-border text-text-secondary'
+                      trial.status === 'scheduled' || trial.status === 'confirmed' ? 'border-brand/30 text-brand bg-brand/5' : 'border-dark-border text-text-secondary'
                     }`}>
                       {trial.status}
                     </span>
+                  )}
+                  {role === 'player' && trial.status === 'scheduled' && (
+                    <div className="mt-2.5 flex gap-2" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => handleTrialDecision(trial.id, 'accepted')}
+                        className="flex-1 inline-flex items-center justify-center gap-1 rounded border border-emerald-400/40 bg-emerald-400/10 py-1 text-[10px] font-bold uppercase text-emerald-300 hover:bg-emerald-400/20"
+                      >
+                        <Check className="w-3 h-3" /> Accept
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleTrialDecision(trial.id, 'declined')}
+                        className="flex-1 inline-flex items-center justify-center gap-1 rounded border border-rose-400/40 bg-rose-400/10 py-1 text-[10px] font-bold uppercase text-rose-300 hover:bg-rose-400/20"
+                      >
+                        <Ban className="w-3 h-3" /> Decline
+                      </button>
+                    </div>
                   )}
                 </div>
               ))

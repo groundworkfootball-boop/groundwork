@@ -1,14 +1,15 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react';
-import { collection, doc, getDocs, limit, query, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { collection, getDocs, limit, query } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { ShieldAlert, RefreshCw, CheckCircle2, XCircle, Search, Clock } from 'lucide-react';
-import { db } from '../../lib/firebase';
+import { db, functions } from '../../lib/firebase';
 import { useToast } from '../../lib/toast';
 import type { ModerationReportRecord } from '../../app/types';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { Input } from '../../components/ui/Input';
+import { Input, Select } from '../../components/ui/Input';
 import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
 import { CardSkeleton } from '../../components/ui/Skeleton';
 
@@ -18,6 +19,8 @@ const STATUS_TONE = {
   resolved: 'emerald',
   dismissed: 'slate',
 } as const;
+
+type EnforcementAction = 'none' | 'hide_player' | 'hide_video' | 'suspend_user' | 'suspend_club';
 
 function formatRelative(seconds?: number): string {
   if (!seconds) return '—';
@@ -36,6 +39,7 @@ export const ModerationPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [actions, setActions] = useState<Record<string, EnforcementAction>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,7 +58,7 @@ export const ModerationPage = () => {
       setReports(rows);
     } catch (err) {
       console.error(err);
-      setError('We could not load the moderation queue. Please try again.');
+      setError('We could not load the moderation queue. Moderator claims are required.');
     } finally {
       setLoading(false);
     }
@@ -64,19 +68,27 @@ export const ModerationPage = () => {
     void load();
   }, [load]);
 
-  const setStatus = async (reportId: string, status: ModerationReportRecord['status']) => {
+  const reviewReport = async (
+    reportId: string,
+    status: 'investigating' | 'resolved' | 'dismissed',
+  ) => {
     setProcessingId(reportId);
+    const actionTaken = status === 'resolved' ? actions[reportId] ?? 'none' : 'none';
     try {
-      await updateDoc(doc(db, 'moderationReports', reportId), {
-        status,
-        reviewedAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-      success(`Report marked ${status}.`);
+      const callable = httpsCallable<
+        {
+          reportId: string;
+          status: 'investigating' | 'resolved' | 'dismissed';
+          actionTaken?: EnforcementAction;
+        },
+        { ok: boolean }
+      >(functions, 'adminModerateReport');
+      await callable({ reportId, status, actionTaken });
+      success(`Report marked ${status}${actionTaken !== 'none' ? ` (${actionTaken.replace(/_/g, ' ')})` : ''}.`);
       await load();
     } catch (err) {
       console.error(err);
-      toastError('Could not update this report.');
+      toastError((err as { message?: string })?.message ?? 'Could not review this report.');
     } finally {
       setProcessingId(null);
     }
@@ -115,7 +127,7 @@ export const ModerationPage = () => {
       <PageHeader
         eyebrow="Trust & safety"
         title="Moderation queue"
-        description="Reports raised by players, guardians and clubs. Every action is audited."
+        description="Reports raised by players, guardians and clubs. Enforcement executes server-side with an immutable audit entry."
         actions={
           <Button variant="secondary" size="sm" onClick={load} iconLeft={<RefreshCw className="h-3.5 w-3.5" />}>
             Refresh
@@ -125,7 +137,11 @@ export const ModerationPage = () => {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card padding="sm">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Open reports</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Total reports</p>
+          <p className="gw-numeric mt-2 text-[24px] font-bold text-white">{reports.length}</p>
+        </Card>
+        <Card padding="sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Open queue</p>
           <p className="gw-numeric mt-2 text-[24px] font-bold text-amber-300">{open.length}</p>
         </Card>
         <Card padding="sm">
@@ -134,87 +150,96 @@ export const ModerationPage = () => {
             {reports.filter((r) => r.status === 'resolved').length}
           </p>
         </Card>
-        <Card padding="sm">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Total</p>
-          <p className="gw-numeric mt-2 text-[24px] font-bold text-white">{reports.length}</p>
-        </Card>
       </div>
 
       <Card padding="sm">
         <Input
-          placeholder="Search by reason, target type or ID"
+          placeholder="Filter by reason, target type or target ID"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           iconLeft={<Search className="h-4 w-4" />}
-          aria-label="Search reports"
         />
       </Card>
 
       {filtered.length === 0 ? (
         <EmptyState
           icon={<ShieldAlert className="h-6 w-6" />}
-          title="No reports in the queue"
-          description={
-            search
-              ? 'No report matches that search.'
-              : 'Reports submitted by users will appear here for review.'
-          }
+          title="Moderation queue is clear"
+          description="No open reports match your filter."
         />
       ) : (
         <div className="space-y-3">
-          {filtered.map((report) => (
-            <Card key={report.id} padding="md">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={STATUS_TONE[report.status] ?? 'slate'} dot>
-                      {report.status}
-                    </Badge>
-                    <Badge tone="slate">{report.targetType}</Badge>
-                    <span className="font-mono text-[10.5px] text-slate-600">{report.targetId}</span>
+          {filtered.map((report) => {
+            const isOpen = report.status === 'pending' || report.status === 'investigating';
+            return (
+              <Card key={report.id} padding="md">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={STATUS_TONE[report.status] ?? 'slate'} dot>
+                        {report.status}
+                      </Badge>
+                      <Badge tone="slate">{report.targetType}</Badge>
+                      <span className="gw-mono text-slate-500">
+                        <Clock className="mr-1 inline h-3 w-3" />
+                        {formatRelative((report as { createdAt?: { seconds: number } }).createdAt?.seconds)}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-[14px] font-semibold text-white">{report.reason}</p>
+                    <p className="mt-1 text-[12px] text-slate-400">Target ID: {report.targetId}</p>
                   </div>
-                  <p className="mt-2 text-[13px] leading-relaxed text-white">{report.reason}</p>
-                  <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-500">
-                    <Clock className="h-3 w-3" />
-                    Reported by {report.reporterId?.slice(0, 12) ?? 'unknown'}
-                    {(report as { createdAt?: { seconds: number } }).createdAt?.seconds
-                      ? ` · ${formatRelative((report as { createdAt?: { seconds: number } }).createdAt?.seconds)}`
-                      : ''}
-                  </p>
-                </div>
 
-                <div className="flex shrink-0 flex-wrap items-center gap-2">
-                  {report.status !== 'investigating' && report.status !== 'resolved' && report.status !== 'dismissed' ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => setStatus(report.id, 'investigating')}
-                      loading={processingId === report.id}
-                    >
-                      Investigate
-                    </Button>
+                  {isOpen ? (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="w-44">
+                        <Select
+                          value={actions[report.id] ?? 'none'}
+                          onChange={(e) =>
+                            setActions((prev) => ({
+                              ...prev,
+                              [report.id]: e.target.value as EnforcementAction,
+                            }))
+                          }
+                          aria-label="Enforcement action"
+                        >
+                          <option value="none">No target action</option>
+                          <option value="hide_player">Hide player profile</option>
+                          <option value="hide_video">Unpublish video</option>
+                          <option value="suspend_user">Suspend user account</option>
+                          <option value="suspend_club">Suspend club</option>
+                        </Select>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={processingId === report.id}
+                        onClick={() => reviewReport(report.id, 'investigating')}
+                      >
+                        Investigate
+                      </Button>
+                      <Button
+                        size="sm"
+                        loading={processingId === report.id}
+                        onClick={() => reviewReport(report.id, 'resolved')}
+                        iconLeft={<CheckCircle2 className="h-3.5 w-3.5" />}
+                      >
+                        Resolve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={processingId === report.id}
+                        onClick={() => reviewReport(report.id, 'dismissed')}
+                        iconLeft={<XCircle className="h-3.5 w-3.5" />}
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
                   ) : null}
-                  <Button
-                    size="sm"
-                    onClick={() => setStatus(report.id, 'resolved')}
-                    disabled={processingId === report.id || report.status === 'resolved'}
-                    iconLeft={<CheckCircle2 className="h-3.5 w-3.5" />}
-                  >
-                    Resolve
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setStatus(report.id, 'dismissed')}
-                    disabled={processingId === report.id || report.status === 'dismissed'}
-                    iconLeft={<XCircle className="h-3.5 w-3.5" />}
-                  >
-                    Dismiss
-                  </Button>
                 </div>
-              </div>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>

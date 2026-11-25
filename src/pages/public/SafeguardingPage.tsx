@@ -1,8 +1,8 @@
-﻿import { ShieldCheck, CheckCircle2, AlertTriangle, Lock, FileCheck2, Users } from 'lucide-react';
+import { ShieldCheck, CheckCircle2, AlertTriangle, Lock, FileCheck2, Users } from 'lucide-react';
 import { PublicLayout, PublicPageHeader } from '../../components/layout/PublicLayout';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
-import { SafeguardingIllustration } from '../../components/illustrations';
+import { MediaFrame } from '../../components/visual/MediaFrame';
 
 const LIFECYCLE = [
   {
@@ -61,7 +61,12 @@ export const SafeguardingPage = () => {
       <section className="mx-auto max-w-8xl px-5 py-16 lg:px-8 lg:py-20">
         <div className="grid items-center gap-14 lg:grid-cols-2">
           <div>
-            <SafeguardingIllustration />
+            <MediaFrame
+              src="/images/player-tunnel.jpg"
+              alt="Players shaking hands on the touchline"
+              caption="Youth safeguarding & guardian consent"
+              tag="Server-enforced"
+            />
           </div>
           <div>
             <h2 className="gw-display text-[clamp(1.8rem,3.4vw,2.6rem)] text-white">

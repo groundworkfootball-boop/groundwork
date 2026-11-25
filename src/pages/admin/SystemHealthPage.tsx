@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useState } from 'react';
-import { collection, getCountFromServer, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
-import { Activity, CheckCircle2, AlertTriangle, Database, ShieldCheck, RefreshCw, Clock } from 'lucide-react';
+import { collection, doc, getCountFromServer, getDoc, getDocs, limit, orderBy, query, setDoc, where } from 'firebase/firestore';
+import { Activity, CheckCircle2, AlertTriangle, Database, ShieldCheck, RefreshCw, Clock, Rocket, XCircle } from 'lucide-react';
 import { db } from '../../lib/firebase';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card, CardHeader } from '../../components/ui/Card';
@@ -15,6 +15,122 @@ interface ServiceCheck {
   status: 'operational' | 'degraded' | 'down';
   latencyMs: number | null;
   detail?: string;
+}
+
+interface DeploymentCheck {
+  name: string;
+  command: string;
+  status: 'deployed' | 'missing' | 'unknown';
+  detail: string;
+}
+
+/**
+ * Probes whether the deployed Firebase artefacts match this build.
+ *
+ * Rules and indexes ship separately from the frontend, so pushing new code
+ * leaves them stale — which shows up as `permission-denied` and
+ * `failed-precondition` on otherwise-valid queries. These probes name the exact
+ * command that fixes each gap instead of leaving the operator guessing.
+ */
+async function runDeploymentChecks(): Promise<DeploymentCheck[]> {
+  const results: DeploymentCheck[] = [];
+
+  // 1. Composite index for `where(playerId) + orderBy(matchScore)`.
+  try {
+    await getDocs(
+      query(collection(db, 'matchResults'), where('playerId', '==', '__probe__'), orderBy('matchScore', 'desc'), limit(1)),
+    );
+    results.push({
+      name: 'Composite indexes',
+      command: 'npm run deploy:data',
+      status: 'deployed',
+      detail: 'matchResults index resolved without a failed-precondition fallback.',
+    });
+  } catch (err) {
+    const code = (err as { code?: string })?.code ?? '';
+    results.push({
+      name: 'Composite indexes',
+      command: 'npm run deploy:data',
+      status: code === 'failed-precondition' ? 'missing' : 'unknown',
+      detail:
+        code === 'failed-precondition'
+          ? 'Queries are falling back to client-side sorting. Deploy firestore.indexes.json.'
+          : `Could not determine (${code || 'unknown'}).`,
+    });
+  }
+
+  // 2. Guardian read rule on `players` — the rule added most recently.
+  try {
+    await getDocs(query(collection(db, 'players'), where('guardianEmail', '==', '__probe__'), limit(1)));
+    results.push({
+      name: 'Guardian read rule',
+      command: 'npm run deploy:data',
+      status: 'deployed',
+      detail: 'players.guardianEmail query permitted by the live ruleset.',
+    });
+  } catch (err) {
+    const code = (err as { code?: string })?.code ?? '';
+    results.push({
+      name: 'Guardian read rule',
+      command: 'npm run deploy:data',
+      status: code === 'permission-denied' ? 'missing' : 'unknown',
+      detail:
+        code === 'permission-denied'
+          ? 'The deployed ruleset predates the guardian read rule. The guardian dashboard will report a denial.'
+          : `Could not determine (${code || 'unknown'}).`,
+    });
+  }
+
+  // 3. Spark-plan request queue — client fallback writes `status: 'pending'`.
+  try {
+    const probeId = `__probe_${Date.now()}`;
+    await setDoc(doc(db, 'subscriptionRequests', probeId), {
+      clubId: '__probe__',
+      plan: 'probe',
+      status: 'pending',
+      createdAt: new Date(),
+    });
+    results.push({
+      name: 'Client request queues',
+      command: 'npm run deploy:data',
+      status: 'deployed',
+      detail: 'subscriptionRequests accepts a pending client write.',
+    });
+  } catch (err) {
+    const code = (err as { code?: string })?.code ?? '';
+    results.push({
+      name: 'Client request queues',
+      command: 'npm run deploy:data',
+      status: code === 'permission-denied' ? 'missing' : 'unknown',
+      detail:
+        code === 'permission-denied'
+          ? 'Payment and boost requests will fail. The deployed ruleset predates the request queues.'
+          : `Could not determine (${code || 'unknown'}).`,
+    });
+  }
+
+  // 4. Admin role claim — absent until Cloud Functions are deployed.
+  try {
+    const snapshot = await getDoc(doc(db, 'matchingConfigs', 'default'));
+    results.push({
+      name: 'Matching configuration',
+      command: 'npm run deploy:functions',
+      status: snapshot.exists() ? 'deployed' : 'missing',
+      detail: snapshot.exists()
+        ? 'matchingConfigs/default is present.'
+        : 'matchingConfigs/default has not been seeded. Deploy functions to seed it.',
+    });
+  } catch (err) {
+    const code = (err as { code?: string })?.code ?? '';
+    results.push({
+      name: 'Matching configuration',
+      command: 'npm run deploy:functions',
+      status: code === 'permission-denied' ? 'missing' : 'unknown',
+      detail: 'matchingConfigs/default is not readable with the current rules.',
+    });
+  }
+
+  return results;
 }
 
 async function timed<T>(fn: () => Promise<T>): Promise<{ ok: boolean; ms: number; error?: string }> {
@@ -33,6 +149,7 @@ async function timed<T>(fn: () => Promise<T>): Promise<{ ok: boolean; ms: number
 
 export const SystemHealthPage = () => {
   const [checks, setChecks] = useState<ServiceCheck[]>([]);
+  const [deployChecks, setDeployChecks] = useState<DeploymentCheck[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
@@ -84,6 +201,7 @@ export const SystemHealthPage = () => {
       ];
 
       setChecks(results);
+      setDeployChecks(await runDeploymentChecks());
       setLastChecked(new Date());
     } catch (err) {
       console.error(err);
@@ -193,6 +311,55 @@ export const SystemHealthPage = () => {
               </div>
             </div>
           ))}
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Deployment readiness"
+          description="Rules and indexes deploy separately from the app — this is where stale ones show up"
+          icon={<Rocket className="h-4 w-4" />}
+        />
+        <div className="mt-5 space-y-2.5">
+          {deployChecks.map((check) => {
+            const Icon =
+              check.status === 'deployed' ? CheckCircle2 : check.status === 'missing' ? XCircle : AlertTriangle;
+            const tone =
+              check.status === 'deployed'
+                ? 'border-emerald-400/20 bg-emerald-400/[0.04]'
+                : check.status === 'missing'
+                  ? 'border-rose-500/25 bg-rose-500/[0.05]'
+                  : 'border-amber-400/20 bg-amber-400/[0.05]';
+            const iconTone =
+              check.status === 'deployed'
+                ? 'text-emerald-400'
+                : check.status === 'missing'
+                  ? 'text-rose-400'
+                  : 'text-amber-400';
+            return (
+              <div key={check.name} className={`rounded-xl border px-4 py-3 ${tone}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${iconTone}`} />
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-medium text-white">{check.name}</p>
+                      <p className="mt-0.5 text-[11.5px] leading-relaxed text-slate-400">{check.detail}</p>
+                      {check.status === 'missing' ? (
+                        <code className="mt-1.5 inline-block rounded bg-black/40 px-1.5 py-0.5 font-mono text-[11px] text-slate-200">
+                          {check.command}
+                        </code>
+                      ) : null}
+                    </div>
+                  </div>
+                  <Badge
+                    tone={check.status === 'deployed' ? 'emerald' : check.status === 'missing' ? 'rose' : 'amber'}
+                  >
+                    {check.status}
+                  </Badge>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </Card>
 

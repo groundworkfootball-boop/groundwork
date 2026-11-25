@@ -19,7 +19,7 @@ import {
   type LinkedYouth,
 } from '../../lib/services/guardianConsentService';
 import { cn } from '../../components/ui/cn';
-import { SafeguardingIllustration } from '../../components/illustrations';
+import { MediaFrame } from '../../components/visual/MediaFrame';
 
 const STATUS_META = {
   pending: {
@@ -297,9 +297,12 @@ export const ConsentPage = () => {
               </Link>
             </Card>
 
-            <Card variant="flat">
-              <SafeguardingIllustration />
-            </Card>
+            <MediaFrame
+              src="/images/floodlights.jpg"
+              alt="Floodlit pitch safeguarding barrier"
+              caption="Consent enforced in rules & functions"
+              tag="Audit logged"
+            />
 
             <Button
               variant="ghost"

@@ -1,7 +1,8 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import { httpsCallable } from 'firebase/functions';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
-import { db } from '../../lib/firebase';
+import { db, functions } from '../../lib/firebase';
 import { doc, getDoc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import type { PlayerRecord } from '../../app/types';
 import { Save, Lock, Eye, EyeOff, Download, Trash2, Loader2 } from 'lucide-react';
@@ -64,37 +65,46 @@ export const SettingsPage = () => {
   const handleGDPRExport = async () => {
     setExporting(true);
     try {
-      await addDoc(collection(db, 'gdprRequests'), {
-        userId: user!.uid,
-        userEmail: user!.email,
-        type: 'export',
-        status: 'pending',
-        createdAt: serverTimestamp(),
-      });
-      success('Data export requested! You will receive your complete JSON export via email.');
+      const submitGdpr = httpsCallable<{ type: 'export' | 'delete' }, { ok: boolean }>(functions, 'submitGdprRequest');
+      await submitGdpr({ type: 'export' });
+      success('Data export requested. Your JSON archive is being prepared.');
     } catch {
-      toastError('Could not process GDPR export request.');
+      try {
+        await addDoc(collection(db, 'gdprRequests'), {
+          userId: user!.uid,
+          userEmail: user!.email,
+          type: 'export',
+          status: 'pending',
+          createdAt: serverTimestamp(),
+        });
+        success('Data export request queued for compliance processing.');
+      } catch {
+        toastError('Could not process GDPR export request.');
+      }
     } finally {
       setExporting(false);
     }
   };
 
   const handleGDPRDelete = async () => {
-    if (!window.confirm('Are you sure you want to request permanent account deletion under GDPR? This will queue your profile, videos, and applications for secure erasure.')) {
-      return;
-    }
     setDeleting(true);
     try {
-      await addDoc(collection(db, 'gdprRequests'), {
-        userId: user!.uid,
-        userEmail: user!.email,
-        type: 'delete',
-        status: 'pending',
-        createdAt: serverTimestamp(),
-      });
+      const submitGdpr = httpsCallable<{ type: 'export' | 'delete' }, { ok: boolean }>(functions, 'submitGdprRequest');
+      await submitGdpr({ type: 'delete' });
       success('Deletion request logged. Admin compliance team will process within statutory limits.');
     } catch {
-      toastError('Could not submit deletion request.');
+      try {
+        await addDoc(collection(db, 'gdprRequests'), {
+          userId: user!.uid,
+          userEmail: user!.email,
+          type: 'delete',
+          status: 'pending',
+          createdAt: serverTimestamp(),
+        });
+        success('Deletion request logged. Admin compliance team will process within statutory limits.');
+      } catch {
+        toastError('Could not submit deletion request.');
+      }
     } finally {
       setDeleting(false);
     }

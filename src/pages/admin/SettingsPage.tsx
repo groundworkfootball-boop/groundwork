@@ -1,7 +1,9 @@
-﻿import { useCallback, useEffect, useState } from 'react';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { useCallback, useEffect, useState } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { Save, RefreshCw, AlertCircle, ShieldCheck } from 'lucide-react';
-import { db } from '../../lib/firebase';
+import { db, functions } from '../../lib/firebase';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card, CardHeader } from '../../components/ui/Card';
@@ -29,6 +31,7 @@ const DEFAULTS: PlatformSettings = {
 };
 
 export const SettingsPage = () => {
+  const { adminFlags } = useAuth();
   const { success, error: toastError } = useToast();
 
   const [settings, setSettings] = useState<PlatformSettings>(DEFAULTS);
@@ -58,20 +61,18 @@ export const SettingsPage = () => {
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!adminFlags.isSuperAdmin) {
+      toastError('Super-admin custom claims are required to update platform settings.');
+      return;
+    }
     setSaving(true);
     try {
-      await setDoc(
-        doc(db, 'systemSettings', 'platform'),
-        {
-          ...settings,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
-      success('Platform settings saved.');
+      const callable = httpsCallable<PlatformSettings, { ok: boolean }>(functions, 'adminUpdatePlatformSettings');
+      await callable(settings);
+      success('Platform settings saved and audited.');
     } catch (err) {
       console.error(err);
-      toastError('Could not save settings. Super-admin access is required.');
+      toastError((err as { message?: string })?.message ?? 'Could not save settings. Super-admin access is required.');
     } finally {
       setSaving(false);
     }

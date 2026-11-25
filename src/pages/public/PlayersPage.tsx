@@ -3,13 +3,7 @@ import { PublicLayout, PublicPageHeader, Reveal } from '../../components/layout/
 import { ButtonLink } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { MatchScorePanel } from '../../components/ui/ScorePanel';
-import { DossierIllustration, VideoAnalysisIllustration } from '../../components/illustrations';
-import {
-  BootIllustration,
-  BallIllustration,
-  ScoutingRadarIllustration,
-  JerseyIllustration,
-} from '../../components/illustrations/football';
+import { MediaFrame } from '../../components/visual/MediaFrame';
 
 const BENEFITS = [
   {
@@ -123,15 +117,25 @@ export const PlayersPage = () => {
           </Reveal>
 
           <Reveal delay={90} className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-xl border border-white/[0.08] bg-ink-950/60 p-4 sm:col-span-2">
-              <DossierIllustration />
-            </div>
-            <div className="rounded-xl border border-white/[0.08] bg-ink-950/60 p-4">
-              <BootIllustration />
-            </div>
-            <div className="rounded-xl border border-white/[0.08] bg-ink-950/60 p-4">
-              <JerseyIllustration number="8" />
-            </div>
+            <MediaFrame
+              src="/images/player-training.jpg"
+              alt="Player executing a pass on the pitch"
+              caption="Verified match profile"
+              tag="Profile completeness"
+              className="sm:col-span-2"
+            />
+            <MediaFrame
+              src="/images/match-action.jpg"
+              alt="Football pitch touchline"
+              caption="Position & availability"
+              tag="30% + 10%"
+            />
+            <MediaFrame
+              src="/images/player-tunnel.jpg"
+              alt="Players on the touchline"
+              caption="Trial pathway"
+              tag="Audited"
+            />
           </Reveal>
         </div>
       </section>
@@ -218,15 +222,25 @@ export const PlayersPage = () => {
           </Reveal>
 
           <Reveal delay={90} className="space-y-4">
-            <div className="rounded-xl border border-violet-400/[0.16] bg-ink-950/60 p-4">
-              <VideoAnalysisIllustration />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="rounded-xl border border-white/[0.08] bg-ink-950/60 p-4">
-                <ScoutingRadarIllustration />
-              </div>
-              <div className="rounded-xl border border-white/[0.08] bg-ink-950/60 p-4">
-                <BallIllustration />
+            <div className="overflow-hidden rounded-2xl border border-white/[0.10] bg-ink-950">
+              <video
+                className="aspect-video w-full object-cover"
+                src="/media/hero.mp4"
+                poster="/media/hero-poster.jpg"
+                autoPlay
+                muted
+                loop
+                playsInline
+              />
+              <div className="border-t border-white/[0.07] p-4">
+                <p className="gw-mono text-brand">AI-assisted observable tags</p>
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {['Attacking third', 'Wide framing', 'Passing sequence', 'Right foot'].map((tag) => (
+                    <span key={tag} className="rounded-md border border-white/[0.10] bg-white/[0.04] px-2.5 py-1 text-[11.5px] text-slate-200">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
           </Reveal>

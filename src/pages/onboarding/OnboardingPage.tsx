@@ -28,7 +28,7 @@ import {
   OnboardingShell,
   SliderField,
 } from '../../components/onboarding/OnboardingKit';
-import { BootIllustration, CrestIllustration, TacticsBoardIllustration } from '../../components/illustrations/football';
+import { MediaFrame } from '../../components/visual/MediaFrame';
 
 const STEPS = ['Identity', 'Playing profile', 'Availability', 'Story'];
 const TOTAL = STEPS.length;
@@ -176,7 +176,12 @@ export const OnboardingPage = () => {
       success('Profile saved. Your dossier is live.');
     } catch (err) {
       console.error(err);
-      toastError('We could not save your profile. Please try again.');
+      const code = (err as { code?: string })?.code ?? '';
+      toastError(
+        code === 'permission-denied'
+          ? 'Your profile could not be published because the deployed security rules are older than this build. An administrator needs to deploy them.'
+          : 'We could not save your profile. Please try again.',
+      );
     } finally {
       setSaving(false);
     }
@@ -386,9 +391,12 @@ export const OnboardingPage = () => {
             hint="Clubs outside this radius score zero on the distance dimension."
           />
 
-          <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
-            <TacticsBoardIllustration className="max-h-44" />
-          </div>
+          <MediaFrame
+            src="/images/match-action.jpg"
+            alt="Football pitch touchline"
+            caption="Position compatibility drives 30% of your match score"
+            tag="Rule engine"
+          />
         </>
       ) : null}
 
@@ -467,10 +475,12 @@ export const OnboardingPage = () => {
             ))}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <BootIllustration className="opacity-90" />
-            <CrestIllustration className="max-h-56 opacity-90" />
-          </div>
+          <MediaFrame
+            src="/images/player-training.jpg"
+            alt="Football match action"
+            caption="Complete dossiers appear first to verified clubs"
+            tag="Profile strength"
+          />
         </>
       ) : null}
     </OnboardingShell>

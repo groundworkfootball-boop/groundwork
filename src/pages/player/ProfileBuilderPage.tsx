@@ -82,6 +82,9 @@ export const ProfileBuilderPage = () => {
   const [skills, setSkills] = useState<Record<string, number>>({});
   const [physical, setPhysical] = useState<Record<string, number>>({});
   const [mental, setMental] = useState<Record<string, number>>({});
+  // Rules only allow a client to toggle `searchable` once consent exists, so the
+  // save must know the current safeguarding state before it writes.
+  const [canBeSearchable, setCanBeSearchable] = useState(false);
 
   const load = useCallback(async () => {
     if (!user?.uid) return;
@@ -103,6 +106,8 @@ export const ProfileBuilderPage = () => {
         if (data.physicalAttributes) setPhysical(data.physicalAttributes);
         if (data.mentalAttributes) setMental(data.mentalAttributes);
         setCompleteness(data.profileCompleteness ?? data.profileComplete ?? 0);
+        // An adult profile, or a youth profile whose consent is live, may be published.
+        setCanBeSearchable(data.isYouth !== true || data.consentStatus === 'granted');
       }
     } catch (err) {
       console.error(err);
@@ -197,15 +202,20 @@ export const ProfileBuilderPage = () => {
           physicalAttributes: physical,
           mentalAttributes: mental,
           profileCompleteness: savedCompleteness,
-          searchable: true,
+          // `searchable` is only client-writable once consent exists; rules reject
+          // the whole update otherwise, which surfaced as "could not save".
+          ...(canBeSearchable ? { searchable: true } : {}),
           updatedAt: serverTimestamp(),
           updatedAtMs: Date.now(),
         });
       } catch (dbErr) {
         console.error(dbErr);
+        const code = (dbErr as { code?: string })?.code ?? '';
         const message =
-          (dbErr as { message?: string })?.message?.replace(/^Firebase: /, '') ??
-          'We could not save your profile. Please try again.';
+          code === 'permission-denied'
+            ? 'Your profile could not be published because the deployed security rules are older than this build. An administrator needs to deploy them.'
+            : (dbErr as { message?: string })?.message?.replace(/^Firebase: /, '') ??
+              'We could not save your profile. Please try again.';
         setFormError(message);
         toastError(message);
         setSaving(false);

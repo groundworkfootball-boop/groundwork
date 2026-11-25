@@ -50,8 +50,8 @@ void main() {
   // Point size is expressed in device pixels relative to the viewport height so
   // the field looks identical at any canvas size (a fixed multiplier would blow
   // the particles up into a single bloom blob on small containers).
-  float worldSize = (0.010 + aSeed.w * 0.022) * (9.0 / max(dist, 1.1));
-  gl_PointSize = clamp(worldSize * uPixelScale, 1.0, 26.0);
+  float worldSize = (0.008 + aSeed.w * 0.016) * (9.0 / max(dist, 1.1));
+  gl_PointSize = clamp(worldSize * uPixelScale, 1.0, 14.0);
 }
 `;
 
@@ -67,12 +67,17 @@ void main() {
   float d = length(p);
   if (d > 0.5) discard;
 
+  // Tight core + soft halo. Kept deliberately dim: hundreds of overlapping
+  // sprites add up fast, and anything brighter saturates to pure white.
   float core = smoothstep(0.5, 0.0, d);
-  float halo = pow(core, 3.0);
-  float a = (core * 0.30 + halo * 0.85) * (1.0 - vDepth * 0.72);
+  float halo = pow(core, 4.0);
+  float a = (core * 0.18 + halo * 0.55) * (1.0 - vDepth * 0.75);
 
   vec3 tint = mix(uGlow, uAccent, vSpark);
-  gl_FragColor = vec4(tint * (0.75 + vSpark * 0.9), a);
+  // The canvas is premultiplied, so colour must be premultiplied by alpha here.
+  // Emitting un-premultiplied RGB is what previously made the field composite as
+  // a solid white wash instead of a glow on black.
+  gl_FragColor = vec4(tint * a, a);
 }
 `;
 
@@ -134,7 +139,7 @@ export function ParticleField({
     const gl = canvas.getContext('webgl', {
       alpha: true,
       antialias: false,
-      premultipliedAlpha: false,
+      premultipliedAlpha: true,
       powerPreference: 'low-power',
     });
     if (!gl) return;
@@ -185,7 +190,9 @@ export function ParticleField({
 
     gl.clearColor(0, 0, 0, 0);
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    // Premultiplied source over destination keeps the accumulated alpha bounded,
+    // so overlapping sprites glow instead of saturating to white.
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
 

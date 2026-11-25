@@ -81,7 +81,7 @@ function calculateAge(dob: string): number | null {
 function authErrorMessage(code: string): string {
   switch (code) {
     case 'auth/email-already-in-use':
-      return 'An account already exists with that email address.';
+      return 'An account already exists with this email address. Try signing in instead.';
     case 'auth/weak-password':
       return 'Choose a stronger password — at least 8 characters.';
     case 'auth/invalid-email':
@@ -95,6 +95,15 @@ function authErrorMessage(code: string): string {
   }
 }
 
+/** Codes that belong against the email input rather than the form footer. */
+function emailFieldError(code: string): string | null {
+  if (code === 'auth/email-already-in-use') {
+    return 'This email is already registered. Sign in instead.';
+  }
+  if (code === 'auth/invalid-email') return 'Enter a valid email address.';
+  return null;
+}
+
 export const RegisterPage = () => {
   const navigate = useNavigate();
   const { register } = useAuth();
@@ -104,6 +113,7 @@ export const RegisterPage = () => {
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -219,6 +229,7 @@ export const RegisterPage = () => {
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code ?? '';
       const message = authErrorMessage(code);
+      setEmailError(emailFieldError(code));
       setFormError(message);
       toastError(message);
     } finally {
@@ -318,8 +329,12 @@ export const RegisterPage = () => {
               type="email"
               placeholder="you@example.com"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (emailError) setEmailError(null);
+              }}
               iconLeft={<Mail className="h-4 w-4" />}
+              error={emailError}
               autoComplete="email"
               required
             />

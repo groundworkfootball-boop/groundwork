@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Target, ShieldCheck, CheckCircle2, ArrowLeft } from 'lucide-react';
-import { ParticleField } from '../visual/ParticleField';
 
 const HIGHLIGHTS = [
   'Deterministic, auditable match scores',
@@ -28,10 +27,14 @@ export function AuthLayout({
       {/* ── Brand panel: WebGL instrument viewport ───────────────────── */}
       <aside className="relative hidden w-[46%] max-w-[600px] shrink-0 overflow-hidden border-r border-white/[0.07] lg:flex lg:flex-col">
         <div className="absolute inset-0 bg-ink-950">
-          <ParticleField count={1500} />
+          <img
+            src="/images/stadium-night.jpg"
+            alt=""
+            aria-hidden
+            className="h-full w-full object-cover opacity-35"
+          />
         </div>
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,transparent_8%,rgba(4,7,12,0.7)_62%,rgba(4,7,12,0.95)_100%)]" />
-        <div className="pointer-events-none absolute inset-0 gw-hairline-grid opacity-30" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-ink-950/85 via-ink-950/65 to-ink-950/95" />
 
         <div className="relative flex flex-1 flex-col justify-between p-9 xl:p-11">
           <Link to="/" className="flex items-center gap-2.5" aria-label="Groundwork home">

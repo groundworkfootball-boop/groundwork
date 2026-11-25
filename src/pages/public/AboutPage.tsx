@@ -1,8 +1,8 @@
-﻿import { ArrowRight, Target, ShieldCheck, Users, Sparkles } from 'lucide-react';
+import { ArrowRight, Target, ShieldCheck, Users, Sparkles } from 'lucide-react';
 import { PublicLayout, PublicPageHeader } from '../../components/layout/PublicLayout';
 import { ButtonLink } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
-import { StadiumIllustration } from '../../components/illustrations';
+import { MediaFrame } from '../../components/visual/MediaFrame';
 
 const VALUES = [
   {
@@ -62,7 +62,12 @@ export const AboutPage = () => {
           </div>
 
           <div>
-            <StadiumIllustration />
+            <MediaFrame
+              src="/images/stadium-night.jpg"
+              alt="Floodlit football stadium pitch at dusk"
+              caption="Structured recruitment across UK non-league and academy tiers"
+              tag="Verified ecosystem"
+            />
           </div>
         </div>
       </section>

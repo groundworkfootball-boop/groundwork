@@ -30,7 +30,7 @@ import { ButtonLink } from '../../components/ui/Button';
 import { EmptyState, ErrorState } from '../../components/ui/EmptyState';
 import { DashboardSkeleton } from '../../components/ui/Skeleton';
 import { RulesDeniedNotice } from '../../components/ui/RulesDeniedNotice';
-import { SafeguardingIllustration } from '../../components/illustrations';
+import { MediaFrame } from '../../components/visual/MediaFrame';
 
 const CONSENT_TONE = {
   granted: 'emerald',
@@ -348,10 +348,11 @@ export const GuardianDashboard = () => {
         </Card>
 
         <Card className="overflow-hidden">
-          <div className="relative">
-            <SafeguardingIllustration className="h-40 w-full" />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink-900 via-transparent to-transparent" />
-          </div>
+          <MediaFrame
+            src="/images/player-tunnel.jpg"
+            alt="Youth football match touchline"
+            aspect="tall"
+          />
           <div className="mt-4">
             <Badge tone="brand" dot>
               Safeguarding first

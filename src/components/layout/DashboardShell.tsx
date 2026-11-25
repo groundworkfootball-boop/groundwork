@@ -1,4 +1,4 @@
-﻿import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
 import {
   LayoutDashboard,
@@ -32,7 +32,7 @@ import {
   Bell,
   Sparkles,
 } from 'lucide-react';
-import { useAuth, type Role } from '../../context/AuthContext';
+import { useAuth, type AdminFlags, type Role } from '../../context/AuthContext';
 import { useOnboardingGate } from '../../lib/useOnboardingGate';
 import { useToast } from '../../lib/toast';
 import { cn } from '../ui/cn';
@@ -43,6 +43,7 @@ interface NavItem {
   href: string;
   icon: React.ElementType;
   roles: Role[];
+  requiredAdminFlags?: Array<keyof AdminFlags>;
   badge?: string;
 }
 
@@ -110,22 +111,95 @@ const NAV_GROUPS: NavGroup[] = [
     label: 'Administration',
     items: [
       { name: 'Admin dashboard', href: '/dashboard/admin/dashboard', icon: LayoutDashboard, roles: ['admin'] },
-      { name: 'Users', href: '/dashboard/users', icon: Users, roles: ['admin'] },
-      { name: 'Players', href: '/dashboard/admin/players', icon: Target, roles: ['admin'] },
-      { name: 'Clubs', href: '/dashboard/admin/clubs', icon: Building2, roles: ['admin'] },
-      { name: 'Youth verification', href: '/dashboard/admin/youth-verification', icon: ShieldCheck, roles: ['admin'] },
-      { name: 'Consent audits', href: '/dashboard/admin/consent', icon: FileCheck2, roles: ['admin'] },
-      { name: 'Matching config', href: '/dashboard/admin/matching-config', icon: Sliders, roles: ['admin'], badge: 'Pure' },
+      {
+        name: 'Users',
+        href: '/dashboard/users',
+        icon: Users,
+        roles: ['admin'],
+        requiredAdminFlags: ['isSuperAdmin', 'isModerator'],
+      },
+      {
+        name: 'Players',
+        href: '/dashboard/admin/players',
+        icon: Target,
+        roles: ['admin'],
+        requiredAdminFlags: ['isSuperAdmin', 'isModerator', 'isSafeguardingAdmin'],
+      },
+      {
+        name: 'Clubs',
+        href: '/dashboard/admin/clubs',
+        icon: Building2,
+        roles: ['admin'],
+        requiredAdminFlags: ['isSuperAdmin', 'isSafeguardingAdmin'],
+      },
+      {
+        name: 'Youth verification',
+        href: '/dashboard/admin/youth-verification',
+        icon: ShieldCheck,
+        roles: ['admin'],
+        requiredAdminFlags: ['isSuperAdmin', 'isSafeguardingAdmin'],
+      },
+      {
+        name: 'Consent audits',
+        href: '/dashboard/admin/consent',
+        icon: FileCheck2,
+        roles: ['admin'],
+        requiredAdminFlags: ['isSuperAdmin', 'isSafeguardingAdmin'],
+      },
+      {
+        name: 'Matching config',
+        href: '/dashboard/admin/matching-config',
+        icon: Sliders,
+        roles: ['admin'],
+        requiredAdminFlags: ['isSuperAdmin'],
+        badge: 'Pure',
+      },
       { name: 'AI management', href: '/dashboard/admin/ai', icon: Lightbulb, roles: ['admin'] },
-      { name: 'Moderation', href: '/dashboard/admin/moderation', icon: ShieldCheck, roles: ['admin'] },
+      {
+        name: 'Moderation',
+        href: '/dashboard/admin/moderation',
+        icon: ShieldCheck,
+        roles: ['admin'],
+        requiredAdminFlags: ['isSuperAdmin', 'isModerator', 'isSafeguardingAdmin'],
+      },
       { name: 'Reports', href: '/dashboard/admin/reports', icon: BarChart3, roles: ['admin'] },
-      { name: 'Payments', href: '/dashboard/admin/payments', icon: DollarSign, roles: ['admin'] },
-      { name: 'Subscriptions', href: '/dashboard/admin/subscriptions', icon: CreditCard, roles: ['admin'] },
-      { name: 'GDPR requests', href: '/dashboard/admin/gdpr', icon: Lock, roles: ['admin'] },
+      {
+        name: 'Payments',
+        href: '/dashboard/admin/payments',
+        icon: DollarSign,
+        roles: ['admin'],
+        requiredAdminFlags: ['isSuperAdmin', 'isFinanceAdmin'],
+      },
+      {
+        name: 'Subscriptions',
+        href: '/dashboard/admin/subscriptions',
+        icon: CreditCard,
+        roles: ['admin'],
+        requiredAdminFlags: ['isSuperAdmin', 'isFinanceAdmin'],
+      },
+      {
+        name: 'GDPR requests',
+        href: '/dashboard/admin/gdpr',
+        icon: Lock,
+        roles: ['admin'],
+        requiredAdminFlags: ['isSuperAdmin', 'isSafeguardingAdmin', 'isFinanceAdmin'],
+      },
       { name: 'Audit trail', href: '/dashboard/audit-logs', icon: FileText, roles: ['admin'] },
       { name: 'System health', href: '/dashboard/admin/system-health', icon: Activity, roles: ['admin'] },
-      { name: 'Roles & permissions', href: '/dashboard/admin/roles', icon: KeyRound, roles: ['admin'] },
-      { name: 'Platform settings', href: '/dashboard/admin/settings', icon: Settings, roles: ['admin'] },
+      {
+        name: 'Roles & permissions',
+        href: '/dashboard/admin/roles',
+        icon: KeyRound,
+        roles: ['admin'],
+        requiredAdminFlags: ['isSuperAdmin'],
+      },
+      {
+        name: 'Platform settings',
+        href: '/dashboard/admin/settings',
+        icon: Settings,
+        roles: ['admin'],
+        requiredAdminFlags: ['isSuperAdmin'],
+      },
     ],
   },
 ];
@@ -137,8 +211,16 @@ const ROLE_LABEL: Record<Role, string> = {
   admin: 'Administrator',
 };
 
+function adminSubRoleLabel(flags: AdminFlags): string {
+  if (flags.isSuperAdmin) return 'Super Admin';
+  if (flags.isSafeguardingAdmin) return 'Safeguarding';
+  if (flags.isFinanceAdmin) return 'Finance';
+  if (flags.isModerator) return 'Moderator';
+  return 'Administrator';
+}
+
 export function DashboardShell() {
-  const { role, user, logout } = useAuth();
+  const { role, adminFlags, user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { success } = useToast();
@@ -162,9 +244,15 @@ export function DashboardShell() {
     if (!role) return [];
     return NAV_GROUPS.map((group) => ({
       ...group,
-      items: group.items.filter((item) => item.roles.includes(role)),
+      items: group.items.filter((item) => {
+        if (!item.roles.includes(role)) return false;
+        if (role === 'admin' && item.requiredAdminFlags?.length) {
+          return adminFlags.isSuperAdmin || item.requiredAdminFlags.some((f) => adminFlags[f]);
+        }
+        return true;
+      }),
     })).filter((group) => group.items.length > 0);
-  }, [role]);
+  }, [role, adminFlags]);
 
   const handleLogout = async () => {
     await logout();
@@ -173,6 +261,7 @@ export function DashboardShell() {
   };
 
   const initials = (user?.name ?? user?.email ?? 'G').slice(0, 1).toUpperCase();
+  const workspaceLabel = role === 'admin' ? adminSubRoleLabel(adminFlags) : role ? ROLE_LABEL[role] : 'Workspace';
 
   const sidebar = (
     <div className="flex h-full flex-col">
@@ -184,9 +273,7 @@ export function DashboardShell() {
           </span>
           <span className="flex flex-col leading-none">
             <span className="font-display text-[13px] font-bold tracking-[0.13em] text-white">GROUNDWORK</span>
-            <span className="gw-mono mt-1 text-[8px] text-slate-500">
-              {role ? ROLE_LABEL[role] : 'Workspace'}
-            </span>
+            <span className="gw-mono mt-1 text-[8px] text-slate-500">{workspaceLabel}</span>
           </span>
         </NavLink>
         <button
@@ -299,7 +386,7 @@ export function DashboardShell() {
           <div className="min-w-0 flex-1">
             <p className="flex items-center gap-2 text-[12px] font-medium text-slate-400">
               <span className="gw-live-dot" />
-              <span className="gw-mono text-slate-500">{role ? ROLE_LABEL[role] : ''} workspace</span>
+              <span className="gw-mono text-slate-500">{workspaceLabel} workspace</span>
             </p>
           </div>
 
@@ -338,7 +425,7 @@ export function DashboardShell() {
                       <p className="truncate text-[11px] text-slate-500">{user?.email}</p>
                       <div className="mt-2">
                         <Badge tone={role === 'admin' ? 'violet' : role === 'club' ? 'sky' : 'brand'}>
-                          {role ? ROLE_LABEL[role] : 'Member'}
+                          {workspaceLabel}
                         </Badge>
                       </div>
                     </div>
@@ -377,6 +464,3 @@ export function DashboardShell() {
     </div>
   );
 }
-
-
-

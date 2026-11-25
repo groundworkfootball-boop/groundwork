@@ -1,7 +1,7 @@
-﻿import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../shared/firebaseAdmin.js';
-import { requireAdminToken } from '../shared/authz.js';
+import { requireAdmin } from '../shared/authz.js';
 import { writeAuditLog } from '../shared/audit.js';
 import { enqueueMatchJob } from '../matching/queue.js';
 
@@ -19,7 +19,7 @@ interface VisibilityInput {
  * sanctioned way for an administrator to override it, and it always audits.
  */
 export const adminSetPlayerVisibility = onCall(async (request) => {
-  const adminUid = requireAdminToken(request);
+  const adminUid = await requireAdmin(request, ['isSuperAdmin', 'isSafeguardingAdmin', 'isModerator']);
   const data = (request.data ?? {}) as VisibilityInput;
 
   const playerId = typeof data.playerId === 'string' ? data.playerId : '';

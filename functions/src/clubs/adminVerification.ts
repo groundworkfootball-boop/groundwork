@@ -1,7 +1,7 @@
-﻿import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../shared/firebaseAdmin.js';
-import { requireAdminToken } from '../shared/authz.js';
+import { requireAdmin } from '../shared/authz.js';
 import { writeAuditLog } from '../shared/audit.js';
 import { enqueueMatchJob } from '../matching/queue.js';
 
@@ -23,7 +23,7 @@ const DEFAULT_YOUTH_VALIDITY_MS = 365 * 24 * 60 * 60 * 1000;
  * immutable audit entry.
  */
 export const adminReviewClubVerification = onCall(async (request) => {
-  const adminUid = requireAdminToken(request);
+  const adminUid = await requireAdmin(request, ['isSuperAdmin', 'isSafeguardingAdmin']);
   const data = (request.data ?? {}) as ReviewInput;
 
   const clubId = typeof data.clubId === 'string' ? data.clubId : '';

@@ -1,16 +1,29 @@
 import { useEffect, useState } from 'react';
-import { Users, Search, User, Mail, Calendar, Loader2, AlertCircle, Ban, CheckCircle2 } from 'lucide-react';
+import { httpsCallable } from 'firebase/functions';
+import { Users, Search, User, Mail, Calendar, Loader2, AlertCircle, Ban, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../lib/toast';
-import { db } from '../lib/firebase';
-import { collection, getDocs, query, orderBy, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db, functions } from '../lib/firebase';
+import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Card } from '../components/ui/Card';
+import { Badge } from '../components/ui/Badge';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { EmptyState } from '../components/ui/EmptyState';
 
 interface UserDoc {
   id: string;
   email: string;
   name: string;
   role: string;
+  isSuperAdmin?: boolean;
+  isModerator?: boolean;
+  isSafeguardingAdmin?: boolean;
+  isFinanceAdmin?: boolean;
   createdAt?: { seconds: number };
   disabled?: boolean;
+  suspended?: boolean;
 }
 
 function formatDate(ts?: { seconds: number }): string {
@@ -18,13 +31,15 @@ function formatDate(ts?: { seconds: number }): string {
   return new Date(ts.seconds * 1000).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-const ROLE_BADGE: Record<string, string> = {
-  player: 'text-brand bg-brand/10 border-brand/30',
-  club: 'text-blue-400 bg-blue-400/10 border-blue-400/30',
-  admin: 'text-red-400 bg-red-400/10 border-red-400/30',
+const ROLE_TONE: Record<string, 'brand' | 'sky' | 'rose' | 'emerald' | 'slate'> = {
+  player: 'brand',
+  guardian: 'emerald',
+  club: 'sky',
+  admin: 'rose',
 };
 
 export const UsersList = () => {
+  const { user: currentUser, adminFlags } = useAuth();
   const { success, error: toastError } = useToast();
   const [users, setUsers] = useState<UserDoc[]>([]);
   const [filtered, setFiltered] = useState<UserDoc[]>([]);
@@ -32,24 +47,27 @@ export const UsersList = () => {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const canSuspend = adminFlags.isSuperAdmin || adminFlags.isModerator;
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       setFetchError(null);
       try {
-        const snap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc')));
+        const snap = await getDocs(query(collection(db, 'users'), orderBy('createdAt', 'desc'), limit(250)));
         const data = snap.docs.map((d) => ({ id: d.id, ...d.data() } as UserDoc));
         setUsers(data);
         setFiltered(data);
       } catch (err) {
         console.error('Users list error:', err);
-        setFetchError('Failed to load users. You may need admin permissions in Firestore rules.');
+        setFetchError('Failed to load users. Admin custom claims are required.');
       } finally {
         setLoading(false);
       }
     };
-    load();
+    void load();
   }, []);
 
   useEffect(() => {
@@ -63,170 +81,171 @@ export const UsersList = () => {
     );
   }, [searchTerm, roleFilter, users]);
 
-  const toggleDisabled = async (user: UserDoc) => {
+  const toggleDisabled = async (target: UserDoc) => {
+    if (!canSuspend) {
+      toastError('Moderator or Super-Admin custom claims are required.');
+      return;
+    }
+    const nextDisabled = !(target.disabled || target.suspended);
+    setBusyId(target.id);
     try {
-      await updateDoc(doc(db, 'users', user.id), {
-        disabled: !user.disabled,
-        updatedAt: serverTimestamp(),
+      const callable = httpsCallable<{ uid: string; disabled: boolean; reason?: string }, { ok: boolean }>(
+        functions,
+        'adminSuspendUser',
+      );
+      await callable({
+        uid: target.id,
+        disabled: nextDisabled,
+        reason: nextDisabled ? 'Suspended from Admin Users Console' : 'Reinstated from Admin Users Console',
       });
-      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, disabled: !u.disabled } : u)));
-      success(`User ${user.disabled ? 'enabled' : 'disabled'} successfully.`);
+      setUsers((prev) =>
+        prev.map((u) => (u.id === target.id ? { ...u, disabled: nextDisabled, suspended: nextDisabled } : u)),
+      );
+      success(`User ${nextDisabled ? 'suspended and tokens revoked' : 'reinstated'}.`);
     } catch (err) {
       console.error(err);
-      toastError('Failed to update user status.');
+      toastError((err as { message?: string })?.message ?? 'Failed to update user status.');
+    } finally {
+      setBusyId(null);
     }
   };
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-        <div>
-          <h3 className="text-3xl font-bold tracking-tight flex items-center space-x-3">
-            <Users className="w-7 h-7 text-brand" />
-            <span>User Management</span>
-          </h3>
-          <p className="text-text-secondary text-sm mt-1">Manage platform users, roles, and permissions.</p>
-        </div>
-        <span className="px-3 py-1 bg-brand/10 border border-brand/30 text-brand text-xs font-bold rounded uppercase tracking-widest">
-          {users.length} Total
-        </span>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        eyebrow="Operations"
+        title="User directory"
+        description="Inspect registered accounts and enforce server-side suspensions across Auth and Firestore."
+        actions={<Badge tone="brand">{users.length} accounts</Badge>}
+      />
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by name or email..."
-            className="w-full bg-dark-surface border border-dark-border rounded-lg px-9 py-2.5 text-sm focus:outline-none focus:border-brand"
-          />
-        </div>
-        <div className="flex space-x-2">
-          {['all', 'player', 'club', 'admin'].map((r) => (
-            <button
-              key={r}
-              onClick={() => setRoleFilter(r)}
-              className={`px-3 py-2 text-xs font-bold uppercase tracking-wider rounded-lg border transition-colors ${
-                roleFilter === r
-                  ? 'bg-brand text-dark-bg border-brand'
-                  : 'bg-dark-surface border-dark-border text-text-secondary hover:border-text-secondary/50'
-              }`}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {loading && (
-        <div className="flex items-center justify-center h-48">
-          <Loader2 className="w-8 h-8 text-brand animate-spin" />
-        </div>
-      )}
-
-      {!loading && fetchError && (
-        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 flex items-start space-x-3">
-          <AlertCircle className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-          <div>
-            <p className="text-red-400 text-sm font-medium">{fetchError}</p>
-            <p className="text-red-400/70 text-xs mt-1">
-              Ensure your Firestore rules allow admin users to read the <code>users</code> collection.
-            </p>
+      <Card padding="sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="flex-1">
+            <Input
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search by name or email"
+              iconLeft={<Search className="h-4 w-4" />}
+              aria-label="Search users"
+            />
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {['all', 'player', 'guardian', 'club', 'admin'].map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setRoleFilter(r)}
+                className={`rounded-lg border px-3 py-2 text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+                  roleFilter === r
+                    ? 'border-brand bg-brand text-ink-950'
+                    : 'border-white/[0.08] bg-white/[0.02] text-slate-400 hover:text-white'
+                }`}
+              >
+                {r}
+              </button>
+            ))}
           </div>
         </div>
-      )}
+      </Card>
 
-      {!loading && !fetchError && filtered.length === 0 && (
-        <div className="bg-dark-surface border border-dark-border rounded-xl p-12 text-center">
-          <Users className="w-12 h-12 text-text-secondary/30 mx-auto mb-4" />
-          <h4 className="text-lg font-bold text-text-primary mb-2">No users found</h4>
-          <p className="text-text-secondary text-sm">
-            {searchTerm || roleFilter !== 'all'
-              ? 'No users match your current filters.'
-              : 'No users have registered yet.'}
-          </p>
+      {loading ? (
+        <div className="flex h-48 items-center justify-center">
+          <Loader2 className="h-7 w-7 animate-spin text-brand" />
         </div>
-      )}
-
-      {!loading && !fetchError && filtered.length > 0 && (
-        <div className="bg-dark-surface border border-dark-border rounded-xl overflow-hidden">
+      ) : fetchError ? (
+        <Card>
+          <div className="flex items-start gap-3 text-rose-300">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />
+            <p className="text-[13px]">{fetchError}</p>
+          </div>
+        </Card>
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={<Users className="h-6 w-6" />}
+          title="No users found"
+          description={searchTerm || roleFilter !== 'all' ? 'Adjust your search or role filter.' : 'No registered users yet.'}
+        />
+      ) : (
+        <Card padding="none" className="overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full text-left">
               <thead>
-                <tr className="border-b border-dark-border bg-dark-bg/50">
-                  <th className="text-left text-[10px] font-bold text-text-secondary uppercase tracking-widest px-6 py-4">User</th>
-                  <th className="text-left text-[10px] font-bold text-text-secondary uppercase tracking-widest px-6 py-4">Role</th>
-                  <th className="text-left text-[10px] font-bold text-text-secondary uppercase tracking-widest px-6 py-4">Joined</th>
-                  <th className="text-left text-[10px] font-bold text-text-secondary uppercase tracking-widest px-6 py-4">Status</th>
-                  <th className="text-right text-[10px] font-bold text-text-secondary uppercase tracking-widest px-6 py-4">Actions</th>
+                <tr className="border-b border-white/[0.08] bg-white/[0.03]">
+                  <th className="px-5 py-3.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">User</th>
+                  <th className="px-5 py-3.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Role</th>
+                  <th className="px-5 py-3.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Joined</th>
+                  <th className="px-5 py-3.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Status</th>
+                  <th className="px-5 py-3.5 text-right text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Action</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-dark-border">
-                {filtered.map((u) => (
-                  <tr key={u.id} className={`hover:bg-dark-bg/30 transition-colors ${u.disabled ? 'opacity-50' : ''}`}>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-9 h-9 rounded-full bg-dark-bg border border-dark-border flex items-center justify-center shrink-0">
-                          <User className="w-4 h-4 text-text-secondary" />
+              <tbody className="divide-y divide-white/[0.05]">
+                {filtered.map((u) => {
+                  const isSuspended = Boolean(u.disabled || u.suspended);
+                  const isSelf = u.id === currentUser?.uid;
+                  return (
+                    <tr key={u.id} className={isSuspended ? 'opacity-60' : undefined}>
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.04]">
+                            <User className="h-3.5 w-3.5 text-slate-400" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-[13px] font-medium text-white">{u.name || '—'}</p>
+                            <p className="flex items-center gap-1 truncate text-[11.5px] text-slate-500">
+                              <Mail className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{u.email}</span>
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-medium text-sm">{u.name || '—'}</p>
-                          <p className="text-xs text-text-secondary flex items-center space-x-1">
-                            <Mail className="w-3 h-3" />
-                            <span>{u.email}</span>
-                          </p>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <Badge tone={ROLE_TONE[u.role] ?? 'slate'}>{u.role}</Badge>
+                          {u.isSuperAdmin ? <Badge tone="rose">Super</Badge> : null}
+                          {u.isSafeguardingAdmin ? <Badge tone="emerald">Safeguarding</Badge> : null}
+                          {u.isFinanceAdmin ? <Badge tone="sky">Finance</Badge> : null}
+                          {u.isModerator ? <Badge tone="amber">Mod</Badge> : null}
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-2 py-0.5 border rounded text-[10px] font-bold uppercase tracking-widest ${ROLE_BADGE[u.role] ?? 'text-text-secondary border-dark-border'}`}>
-                        {u.role}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-xs text-text-secondary flex items-center space-x-1">
-                        <Calendar className="w-3 h-3" />
-                        <span>{formatDate(u.createdAt)}</span>
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`text-xs font-bold ${u.disabled ? 'text-red-400' : 'text-brand'}`}>
-                        {u.disabled ? 'Disabled' : 'Active'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex justify-end">
-                        <button
-                          onClick={() => toggleDisabled(u)}
-                          className={`flex items-center space-x-1 px-3 py-1.5 border rounded text-xs font-bold transition-colors ${
-                            u.disabled
-                              ? 'border-brand/30 text-brand hover:bg-brand/10'
-                              : 'border-red-400/30 text-red-400 hover:bg-red-400/10'
-                          }`}
-                        >
-                          {u.disabled ? (
-                            <>
-                              <CheckCircle2 className="w-3 h-3" />
-                              <span>Enable</span>
-                            </>
-                          ) : (
-                            <>
-                              <Ban className="w-3 h-3" />
-                              <span>Disable</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-5 py-3.5 text-[12px] text-slate-400">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Calendar className="h-3 w-3 text-slate-500" />
+                          {formatDate(u.createdAt)}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <Badge tone={isSuspended ? 'rose' : 'emerald'} dot>
+                          {isSuspended ? 'Suspended' : 'Active'}
+                        </Badge>
+                      </td>
+                      <td className="px-5 py-3.5 text-right">
+                        {isSelf ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+                            <ShieldAlert className="h-3 w-3" /> Current session
+                          </span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant={isSuspended ? 'secondary' : 'danger'}
+                            loading={busyId === u.id}
+                            disabled={!canSuspend}
+                            onClick={() => toggleDisabled(u)}
+                            iconLeft={
+                              isSuspended ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />
+                            }
+                          >
+                            {isSuspended ? 'Reinstate' : 'Suspend'}
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        </div>
+        </Card>
       )}
     </div>
   );

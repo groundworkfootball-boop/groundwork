@@ -1,7 +1,8 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react';
-import { collection, doc, getDocs, limit, query, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { ShieldCheck, RefreshCw, Search, Download, Trash2, Clock, CheckCircle2 } from 'lucide-react';
-import { db } from '../../lib/firebase';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { collection, getDocs, limit, query } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
+import { ShieldCheck, RefreshCw, Search, Download, Trash2, Clock, CheckCircle2, XCircle } from 'lucide-react';
+import { db, functions } from '../../lib/firebase';
 import { useToast } from '../../lib/toast';
 import type { GDPRRequestRecord } from '../../app/types';
 import { PageHeader } from '../../components/ui/PageHeader';
@@ -54,7 +55,7 @@ export const GDPRPage = () => {
       setRequests(rows);
     } catch (err) {
       console.error(err);
-      setError('We could not load GDPR requests. Please try again.');
+      setError('We could not load GDPR requests. Compliance admin claims are required.');
     } finally {
       setLoading(false);
     }
@@ -64,19 +65,28 @@ export const GDPRPage = () => {
     void load();
   }, [load]);
 
-  const setStatus = async (requestId: string, status: GDPRRequestRecord['status']) => {
+  const processRequest = async (requestId: string, decision: 'completed' | 'rejected') => {
     setProcessingId(requestId);
     try {
-      await updateDoc(doc(db, 'gdprRequests', requestId), {
-        status,
-        processedAt: status === 'completed' ? serverTimestamp() : null,
-        updatedAt: serverTimestamp(),
+      const callable = httpsCallable<
+        { requestId: string; decision: 'completed' | 'rejected'; reason?: string },
+        { ok: boolean; status: string }
+      >(functions, 'adminProcessGdprRequest');
+
+      await callable({
+        requestId,
+        decision,
+        reason: decision === 'rejected' ? 'Retained under statutory safeguarding/audit policy.' : undefined,
       });
-      success(`Request marked ${status}.`);
+      success(
+        decision === 'completed'
+          ? 'GDPR workflow executed server-side and recorded in auditLogs.'
+          : 'GDPR request rejected with audit entry.',
+      );
       await load();
     } catch (err) {
       console.error(err);
-      toastError('Could not update this request.');
+      toastError((err as { message?: string })?.message ?? 'Could not process this GDPR request.');
     } finally {
       setProcessingId(null);
     }
@@ -111,7 +121,7 @@ export const GDPRPage = () => {
       <PageHeader
         eyebrow="Compliance"
         title="GDPR requests"
-        description="Data export and erasure requests. Consent audit records are retained under statutory obligation."
+        description="Server-executed data export and erasure workflows. Statutory consentAudits and auditLogs are always preserved."
         actions={
           <Button variant="secondary" size="sm" onClick={load} iconLeft={<RefreshCw className="h-3.5 w-3.5" />}>
             Refresh
@@ -121,7 +131,11 @@ export const GDPRPage = () => {
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card padding="sm">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Open requests</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Total requests</p>
+          <p className="gw-numeric mt-2 text-[24px] font-bold text-white">{requests.length}</p>
+        </Card>
+        <Card padding="sm">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Open queue</p>
           <p className="gw-numeric mt-2 text-[24px] font-bold text-amber-300">{pending.length}</p>
         </Card>
         <Card padding="sm">
@@ -130,30 +144,14 @@ export const GDPRPage = () => {
             {requests.filter((r) => r.status === 'completed').length}
           </p>
         </Card>
-        <Card padding="sm">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">Total</p>
-          <p className="gw-numeric mt-2 text-[24px] font-bold text-white">{requests.length}</p>
-        </Card>
-      </div>
-
-      <div className="flex items-start gap-3 rounded-2xl border border-sky-400/25 bg-sky-400/[0.06] p-4">
-        <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-sky-400" />
-        <div>
-          <p className="text-[13px] font-semibold text-sky-100">Retention policy</p>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-sky-200/80">
-            Erasure removes discoverable personal data. Consent audit records and financial transaction records are
-            retained for the statutory period and are never deleted by this workflow.
-          </p>
-        </div>
       </div>
 
       <Card padding="sm">
         <Input
-          placeholder="Search by email, user ID or request type"
+          placeholder="Search by user email, UID or type (export / delete)"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           iconLeft={<Search className="h-4 w-4" />}
-          aria-label="Search GDPR requests"
         />
       </Card>
 
@@ -161,68 +159,83 @@ export const GDPRPage = () => {
         <EmptyState
           icon={<ShieldCheck className="h-6 w-6" />}
           title="No GDPR requests"
-          description={
-            search
-              ? 'No request matches that search.'
-              : 'Export and deletion requests submitted by users will appear here.'
-          }
+          description="Data export and deletion requests filed by users appear here."
         />
       ) : (
-        <div className="space-y-3">
-          {filtered.map((row) => (
-            <Card key={row.id} padding="md">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={row.type === 'delete' ? 'rose' : 'sky'} icon={row.type === 'delete' ? <Trash2 className="h-3 w-3" /> : <Download className="h-3 w-3" />}>
-                      {row.type}
-                    </Badge>
-                    <Badge tone={STATUS_TONE[row.status] ?? 'slate'} dot>
-                      {row.status}
-                    </Badge>
-                  </div>
-                  <p className="mt-2 text-[13px] font-medium text-white">{row.userEmail ?? row.userId ?? '—'}</p>
-                  <p className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500">
-                    <Clock className="h-3 w-3" />
-                    Requested {(row as { createdAt?: { seconds: number } }).createdAt?.seconds
-                      ? formatDate((row as { createdAt?: { seconds: number } }).createdAt?.seconds)
-                      : '—'}
-                    {row.processedAt?.seconds ? ` · processed ${formatDate(row.processedAt.seconds)}` : ''}
-                  </p>
-                </div>
-
-                <div className="flex shrink-0 flex-wrap items-center gap-2">
-                  {row.status === 'pending' ? (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => setStatus(row.id, 'processing')}
-                      loading={processingId === row.id}
-                    >
-                      Start processing
-                    </Button>
-                  ) : null}
-                  <Button
-                    size="sm"
-                    onClick={() => setStatus(row.id, 'completed')}
-                    disabled={processingId === row.id || row.status === 'completed'}
-                    iconLeft={<CheckCircle2 className="h-3.5 w-3.5" />}
-                  >
-                    Complete
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setStatus(row.id, 'rejected')}
-                    disabled={processingId === row.id || row.status === 'rejected'}
-                  >
-                    Reject
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
+        <Card padding="none" className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-white/[0.08] bg-white/[0.03]">
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">User</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Type</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Requested</th>
+                  <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Status</th>
+                  <th className="px-4 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/[0.06]">
+                {filtered.map((req) => (
+                  <tr key={req.id}>
+                    <td className="px-4 py-3">
+                      <p className="text-[13px] font-medium text-white">{req.userEmail ?? req.userId}</p>
+                      <p className="text-[11px] text-slate-500">{req.userId}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge tone={req.type === 'delete' ? 'rose' : 'sky'}>
+                        {req.type === 'delete' ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Trash2 className="h-3 w-3" /> Erasure
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1">
+                            <Download className="h-3 w-3" /> Export
+                          </span>
+                        )}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-[12px] text-slate-400">
+                      <span className="inline-flex items-center gap-1">
+                        <Clock className="h-3 w-3 text-slate-500" />
+                        {formatDate((req as { createdAt?: { seconds: number } }).createdAt?.seconds)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge tone={STATUS_TONE[req.status] ?? 'slate'} dot>
+                        {req.status}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {req.status === 'pending' || req.status === 'processing' ? (
+                        <div className="inline-flex gap-2">
+                          <Button
+                            size="sm"
+                            loading={processingId === req.id}
+                            onClick={() => processRequest(req.id, 'completed')}
+                            iconLeft={<CheckCircle2 className="h-3.5 w-3.5" />}
+                          >
+                            Execute
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            disabled={processingId === req.id}
+                            onClick={() => processRequest(req.id, 'rejected')}
+                            iconLeft={<XCircle className="h-3.5 w-3.5" />}
+                          >
+                            Reject
+                          </Button>
+                        </div>
+                      ) : (
+                        <span className="text-[11.5px] text-slate-500">Processed</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </div>
   );

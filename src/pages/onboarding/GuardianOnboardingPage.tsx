@@ -18,8 +18,7 @@ import { collection, doc, getDocs, limit, query, serverTimestamp, updateDoc, whe
 import { httpsCallable } from 'firebase/functions';
 import { markOnboardingComplete } from '../../lib/onboarding';
 import { OnboardingRail, ChoiceTile } from '../../components/onboarding/OnboardingKit';
-import { ParticleField } from '../../components/visual/ParticleField';
-import { SafeguardingIllustration } from '../../components/illustrations';
+import { MediaFrame } from '../../components/visual/MediaFrame';
 
 const STEPS = ['Your role', 'Link a player', 'How consent works'];
 const PRIVACY_NOTICE_VERSION = '2026.1-EN';
@@ -377,9 +376,13 @@ export const GuardianOnboardingPage = () => {
 
         <aside className="hidden lg:block">
           <div className="gw-frame sticky top-24 overflow-hidden rounded-2xl">
-            <div className="relative h-[280px] overflow-hidden border-b border-white/[0.07] bg-ink-950">
-              <ParticleField count={900} />
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_60%,transparent_18%,rgba(4,7,12,0.88)_78%)]" />
+            <div className="relative h-[240px] overflow-hidden border-b border-white/[0.07] bg-ink-950">
+              <img
+                src="/images/player-tunnel.jpg"
+                alt="Players on touchline"
+                className="h-full w-full object-cover opacity-55"
+              />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-ink-950 via-ink-950/35 to-transparent" />
               <div className="absolute left-3 top-3 flex items-center gap-1.5">
                 <span className="gw-live-dot" />
                 <span className="gw-mono text-emerald-300">Guardian gate</span>
@@ -413,7 +416,12 @@ export const GuardianOnboardingPage = () => {
                 ))}
               </ul>
               <div className="mt-4">
-                <SafeguardingIllustration />
+                <MediaFrame
+                  src="/images/floodlights.jpg"
+                  alt="Floodlit stadium barrier"
+                  caption="Safeguarding enforced server-side"
+                  tag="Audit log"
+                />
               </div>
             </div>
           </div>

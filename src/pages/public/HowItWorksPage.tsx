@@ -1,9 +1,10 @@
-﻿import { ArrowRight, CheckCircle2, ShieldCheck, Target, Sliders, Video, Users, Lock } from 'lucide-react';
+import { ArrowRight, CheckCircle2, ShieldCheck, Target, Sliders, Video, Users, Lock } from 'lucide-react';
 import { PublicLayout, PublicPageHeader } from '../../components/layout/PublicLayout';
 import { ButtonLink } from '../../components/ui/Button';
 import { Card } from '../../components/ui/Card';
 import { Badge } from '../../components/ui/Badge';
-import { DossierIllustration, SafeguardingIllustration } from '../../components/illustrations';
+import { Hero3DPitchScene } from '../../components/visual/Hero3DPitchScene';
+import { MediaFrame } from '../../components/visual/MediaFrame';
 
 const STEPS = [
   {
@@ -104,8 +105,8 @@ export const HowItWorksPage = () => {
             </ul>
           </div>
 
-          <div>
-            <DossierIllustration />
+          <div className="h-[340px] overflow-hidden rounded-2xl border border-white/[0.08] bg-ink-950">
+            <Hero3DPitchScene />
           </div>
         </div>
       </section>
@@ -113,7 +114,12 @@ export const HowItWorksPage = () => {
       <section className="mx-auto max-w-8xl px-5 py-16 lg:px-8 lg:py-20">
         <div className="grid items-center gap-14 lg:grid-cols-2">
           <div>
-            <SafeguardingIllustration />
+            <MediaFrame
+              src="/images/floodlights.jpg"
+              alt="Floodlit stadium tower"
+              caption="Server-side safeguarding enforcement"
+              tag="Consent + verification"
+            />
           </div>
           <div>
             <Badge tone="emerald" icon={<ShieldCheck className="h-3 w-3" />}>

@@ -116,9 +116,16 @@ service firebase.storage {
       allow write: if false;
     }
 
+    function youthConsentGranted(youthId) {
+      return firestore.get(/databases/(default)/documents/players/$(youthId)).data.consentStatus == 'granted'
+        && firestore.get(/databases/(default)/documents/players/$(youthId)).data.searchable == true;
+    }
+
     // ── Youth media (strictly protected) ────────────────────────────────────
     match /youthMedia/{youthId}/{fileName} {
-      allow read: if isOwner(youthId) || isAdmin() || youthVerificationLive();
+      allow read: if isOwner(youthId)
+        || isAdmin()
+        || (youthVerificationLive() && youthConsentGranted(youthId));
       allow write: if isOwner(youthId)
         && request.resource.size < 250 * 1024 * 1024
         && request.resource.contentType.matches('video/.*');

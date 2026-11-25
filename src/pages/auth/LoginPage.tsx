@@ -12,7 +12,7 @@ function authErrorMessage(code: string): string {
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
     case 'auth/user-not-found':
-      return 'That email and password combination is not recognised.';
+      return 'That email and password combination is not recognised. If you have not registered yet, create an account first.';
     case 'auth/invalid-email':
       return 'Enter a valid email address.';
     case 'auth/user-disabled':
@@ -30,6 +30,15 @@ function authErrorMessage(code: string): string {
   }
 }
 
+/** Codes that belong against the email input rather than the form footer. */
+function loginEmailError(code: string): string | null {
+  if (code === 'auth/user-not-found') {
+    return 'No account uses this email yet. Create an account to get started.';
+  }
+  if (code === 'auth/invalid-email') return 'Enter a valid email address.';
+  return null;
+}
+
 export const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -44,6 +53,7 @@ export const LoginPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [remembered, setRemembered] = useState<RememberedAccount[]>([]);
 
   useEffect(() => {
@@ -70,6 +80,7 @@ export const LoginPage = () => {
       navigate('/dashboard', { replace: true });
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code ?? '';
+      setEmailError(loginEmailError(code));
       setFormError(authErrorMessage(code));
     } finally {
       setIsLoading(false);
@@ -156,7 +167,11 @@ export const LoginPage = () => {
           inputMode="email"
           placeholder="you@example.com"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (emailError) setEmailError(null);
+          }}
+          error={emailError}
           iconLeft={<Mail className="h-4 w-4" />}
           required
         />
@@ -243,40 +258,6 @@ export const LoginPage = () => {
         </svg>
         Continue with Google
       </Button>
-
-      {/* Local development shortcuts — never rendered in a production build. */}
-      {import.meta.env.DEV ? (
-        <div className="mt-6 rounded-2xl border border-white/[0.08] bg-white/[0.02] p-3.5">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">
-            Dev accounts
-          </p>
-          <p className="mt-1 text-[10.5px] leading-relaxed text-slate-500">
-            Only works if these users were seeded in your Firebase project.
-          </p>
-          <div className="mt-2.5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {[
-              { label: 'Player', email: 'player@example.com', badge: 'text-brand border-brand/30 bg-brand/10' },
-              { label: 'Club', email: 'club@example.com', badge: 'text-sky-300 border-sky-400/30 bg-sky-400/10' },
-              { label: 'Guardian', email: 'guardian@example.com', badge: 'text-emerald-300 border-emerald-400/30 bg-emerald-400/10' },
-              { label: 'Admin', email: 'admin@example.com', badge: 'text-violet-300 border-violet-400/30 bg-violet-400/10' },
-            ].map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                onClick={() => {
-                  setEmail(item.email);
-                  setPassword('password123');
-                  setFormError(null);
-                }}
-                className={`flex flex-col items-start rounded-xl border p-2 text-left transition hover:scale-[1.02] ${item.badge}`}
-              >
-                <span className="text-[11px] font-bold">{item.label}</span>
-                <span className="truncate text-[9.5px] opacity-75">{item.email}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
 
       <div className="mt-6 flex items-start gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
         <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500/80" />

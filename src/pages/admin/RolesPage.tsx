@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { httpsCallable } from 'firebase/functions';
-import { collection, getDocs, limit, orderBy, query, doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { ShieldCheck, Search, Users, Loader2, AlertCircle, RefreshCw, Check } from 'lucide-react';
+import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
+import { ShieldCheck, Search, Users, Loader2, AlertCircle, RefreshCw, Check, Lock } from 'lucide-react';
 import { db, functions } from '../../lib/firebase';
-import { useAuth, type Role } from '../../context/AuthContext';
+import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../lib/toast';
 import { PageHeader } from '../../components/ui/PageHeader';
 import { Card } from '../../components/ui/Card';
@@ -48,7 +48,7 @@ const ROLE_TONE: Record<string, 'brand' | 'sky' | 'rose' | 'slate' | 'emerald'> 
 };
 
 export const RolesPage = () => {
-  const { user } = useAuth();
+  const { adminFlags, refreshClaims } = useAuth();
   const { success, error: toastError } = useToast();
 
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -60,7 +60,8 @@ export const RolesPage = () => {
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const isSuperAdmin = Boolean((user as { isSuperAdmin?: boolean } | null)?.isSuperAdmin);
+  // Authoritative check comes strictly from Firebase custom claims.
+  const isSuperAdmin = adminFlags.isSuperAdmin;
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -70,7 +71,7 @@ export const RolesPage = () => {
       setUsers(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<UserRow, 'id'>) })));
     } catch (err) {
       console.error('[roles] user list failed', err);
-      setLoadError('Could not load users. Check your admin permissions.');
+      setLoadError('Could not load users. Check your admin custom claims.');
     } finally {
       setLoading(false);
     }
@@ -80,37 +81,26 @@ export const RolesPage = () => {
     void loadUsers();
   }, [loadUsers]);
 
-  const loadClaims = useCallback(async (uid: string) => {
-    setClaimsLoading(true);
-    setClaims(null);
-    try {
-      const callable = httpsCallable<{ uid: string }, ClaimsState & { uid: string }>(functions, 'adminGetUserClaims');
-      const { data } = await callable({ uid });
-      setClaims({ role: data.role, flags: data.flags ?? {} });
-    } catch (err) {
-      console.info('[RolesPage] Cloud Function not deployed (Free Spark Plan) - reading user role directly from Firestore:', err);
+  const loadClaims = useCallback(
+    async (uid: string) => {
+      setClaimsLoading(true);
+      setClaims(null);
       try {
-        const uSnap = await getDoc(doc(db, 'users', uid));
-        if (uSnap.exists()) {
-          const uData = uSnap.data();
-          setClaims({
-            role: (uData.role as Role) ?? null,
-            flags: {
-              isSuperAdmin: Boolean(uData.isSuperAdmin),
-              isModerator: Boolean(uData.isModerator),
-              isSafeguardingAdmin: Boolean(uData.isSafeguardingAdmin),
-              isFinanceAdmin: Boolean(uData.isFinanceAdmin),
-            },
-          });
-        }
-      } catch (dbErr) {
-        console.error('[roles] claims read failed', dbErr);
-        toastError('Could not read role data for this user.');
+        const callable = httpsCallable<{ uid: string }, ClaimsState & { uid: string }>(
+          functions,
+          'adminGetUserClaims',
+        );
+        const { data } = await callable({ uid });
+        setClaims({ role: data.role, flags: data.flags ?? {} });
+      } catch (err) {
+        console.error('[roles] adminGetUserClaims failed', err);
+        toastError('Could not read authoritative custom claims from Cloud Functions.');
+      } finally {
+        setClaimsLoading(false);
       }
-    } finally {
-      setClaimsLoading(false);
-    }
-  }, [toastError]);
+    },
+    [toastError],
+  );
 
   const selectUser = (row: UserRow) => {
     setSelected(row);
@@ -119,6 +109,10 @@ export const RolesPage = () => {
 
   const save = async () => {
     if (!selected || !claims) return;
+    if (!isSuperAdmin) {
+      toastError('Super-admin custom claims are required to modify roles.');
+      return;
+    }
     setSaving(true);
     try {
       const callable = httpsCallable<Record<string, unknown>, { ok: boolean }>(functions, 'adminSetUserRole');
@@ -126,27 +120,16 @@ export const RolesPage = () => {
         uid: selected.id,
         role: claims.role ?? undefined,
         flags: claims.flags,
-        reason: 'Changed from admin roles console',
+        reason: 'Updated from super-admin roles console',
       });
-      success('Role updated. The user must sign in again for claims to take effect.');
+      success('Authoritative custom claims updated. Refresh tokens revoked for this user.');
       setUsers((prev) => prev.map((u) => (u.id === selected.id ? { ...u, role: claims.role ?? u.role } : u)));
+      await refreshClaims();
     } catch (err) {
-      console.info('[RolesPage] Cloud Function not deployed (Free Spark Plan) - updating user document directly in Firestore:', err);
-      try {
-        await updateDoc(doc(db, 'users', selected.id), {
-          role: claims.role,
-          isSuperAdmin: Boolean(claims.flags.isSuperAdmin),
-          isModerator: Boolean(claims.flags.isModerator),
-          isSafeguardingAdmin: Boolean(claims.flags.isSafeguardingAdmin),
-          isFinanceAdmin: Boolean(claims.flags.isFinanceAdmin),
-          updatedAt: serverTimestamp(),
-        });
-        success('Role updated in Firestore user record.');
-        setUsers((prev) => prev.map((u) => (u.id === selected.id ? { ...u, role: claims.role ?? u.role } : u)));
-      } catch (dbErr) {
-        console.error('[roles] save failed', dbErr);
-        toastError('Could not update this role.');
-      }
+      console.error('[roles] adminSetUserRole failed', err);
+      const message =
+        (err as { message?: string })?.message ?? 'Role assignment requires deployed Cloud Functions and super-admin claims.';
+      toastError(message);
     } finally {
       setSaving(false);
     }
@@ -165,7 +148,7 @@ export const RolesPage = () => {
       <PageHeader
         eyebrow="Access control"
         title="Roles & permissions"
-        description="Roles are stored as Firebase custom claims — the authoritative source for every rule and callable."
+        description="Roles and internal admin flags live exclusively in Firebase custom claims — enforced by Cloud Functions and security rules."
         actions={
           <Button variant="secondary" size="sm" onClick={loadUsers} iconLeft={<RefreshCw className="h-3.5 w-3.5" />}>
             Refresh
@@ -175,9 +158,10 @@ export const RolesPage = () => {
 
       {!isSuperAdmin && (
         <div className="flex items-start gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] p-4">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+          <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
           <p className="text-[12.5px] leading-relaxed text-amber-200">
-            You can view roles but only a super admin can change administrative roles or flags.
+            Super-admin custom claims (`isSuperAdmin: true`) are required to assign or revoke roles. This restriction is
+            enforced server-side in `adminSetUserRole`.
           </p>
         </div>
       )}
@@ -247,18 +231,18 @@ export const RolesPage = () => {
             <EmptyState
               icon={<ShieldCheck className="h-6 w-6" />}
               title="Select a user"
-              description="Choose a user to inspect and edit their authoritative claims."
+              description="Choose a user to inspect and edit their authoritative Firebase custom claims."
             />
           ) : claimsLoading ? (
             <div className="flex items-center gap-2 py-8 text-[13px] text-slate-400">
               <Loader2 className="h-4 w-4 animate-spin" />
-              Reading claims…
+              Reading custom claims…
             </div>
           ) : !claims ? (
             <EmptyState
               icon={<AlertCircle className="h-6 w-6" />}
               title="Claims unavailable"
-              description="The adminGetUserClaims callable did not respond."
+              description="The adminGetUserClaims Cloud Function could not be reached."
               action={
                 <Button variant="secondary" size="sm" onClick={() => loadClaims(selected.id)}>
                   Retry
@@ -279,7 +263,7 @@ export const RolesPage = () => {
                     <button
                       key={r.value}
                       type="button"
-                      disabled={!isSuperAdmin && r.value === 'admin'}
+                      disabled={!isSuperAdmin}
                       onClick={() => setClaims({ ...claims, role: r.value })}
                       className={`rounded-lg border px-3 py-2 text-[12.5px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                         claims.role === r.value
@@ -295,21 +279,23 @@ export const RolesPage = () => {
 
               <div>
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Internal flags
+                  Internal admin flags
                 </p>
                 <div className="space-y-2">
                   {ADMIN_FLAGS.map((flag) => (
                     <label
                       key={flag.key}
                       className={`flex cursor-pointer items-start gap-2.5 rounded-lg border border-white/[0.08] bg-white/[0.02] p-2.5 transition-colors hover:border-white/20 ${
-                        !isSuperAdmin ? 'cursor-not-allowed opacity-50' : ''
+                        !isSuperAdmin || claims.role !== 'admin' ? 'cursor-not-allowed opacity-50' : ''
                       }`}
                     >
                       <input
                         type="checkbox"
-                        disabled={!isSuperAdmin}
+                        disabled={!isSuperAdmin || claims.role !== 'admin'}
                         checked={Boolean(claims.flags[flag.key])}
-                        onChange={(e) => setClaims({ ...claims, flags: { ...claims.flags, [flag.key]: e.target.checked } })}
+                        onChange={(e) =>
+                          setClaims({ ...claims, flags: { ...claims.flags, [flag.key]: e.target.checked } })
+                        }
                         className="mt-0.5 h-3.5 w-3.5 rounded border-white/20 bg-ink-950 text-brand focus:ring-brand/30"
                       />
                       <span>
@@ -328,10 +314,10 @@ export const RolesPage = () => {
                 disabled={!isSuperAdmin}
                 iconLeft={<Check className="h-4 w-4" />}
               >
-                Save claims
+                Save custom claims
               </Button>
               <p className="text-[11px] leading-relaxed text-slate-600">
-                Saving revokes the user's refresh tokens so the new claims apply on their next sign-in.
+                Saving revokes the user&apos;s refresh tokens and writes an immutable audit log entry.
               </p>
             </div>
           )}
@@ -340,4 +326,3 @@ export const RolesPage = () => {
     </div>
   );
 };
-

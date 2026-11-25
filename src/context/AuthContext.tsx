@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { auth, db } from '../lib/firebase';
+import { auth, db, functions } from '../lib/firebase';
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -13,11 +13,24 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../lib/firebase';
 import { saveRememberedAccount, setActiveSession, clearActiveSession } from '../lib/sessionStorage';
 import { generateClubCode } from '../lib/clubCode';
 
 export type Role = 'player' | 'guardian' | 'club' | 'admin';
+
+export interface AdminFlags {
+  isSuperAdmin: boolean;
+  isModerator: boolean;
+  isSafeguardingAdmin: boolean;
+  isFinanceAdmin: boolean;
+}
+
+const EMPTY_ADMIN_FLAGS: AdminFlags = {
+  isSuperAdmin: false,
+  isModerator: false,
+  isSafeguardingAdmin: false,
+  isFinanceAdmin: false,
+};
 
 export interface AppUser {
   uid: string;
@@ -26,6 +39,7 @@ export interface AppUser {
   name: string;
   emailVerified: boolean;
   claimsRole?: Role | null;
+  adminFlags: AdminFlags;
   photoUrl?: string;
   [key: string]: unknown;
 }
@@ -50,6 +64,7 @@ export interface RegisterExtra {
 
 interface AuthContextType {
   role: Role | null;
+  adminFlags: AdminFlags;
   isAuthenticated: boolean;
   user: AppUser | null;
   firebaseUser: FirebaseUser | null;
@@ -71,6 +86,16 @@ function normaliseRole(value: unknown): Role | null {
   return typeof value === 'string' && (VALID_ROLES as string[]).includes(value) ? (value as Role) : null;
 }
 
+function extractAdminFlags(claims?: Record<string, unknown> | null): AdminFlags {
+  if (!claims || claims.role !== 'admin') return EMPTY_ADMIN_FLAGS;
+  return {
+    isSuperAdmin: claims.isSuperAdmin === true,
+    isModerator: claims.isModerator === true,
+    isSafeguardingAdmin: claims.isSafeguardingAdmin === true,
+    isFinanceAdmin: claims.isFinanceAdmin === true,
+  };
+}
+
 /** Age check used only for the client-side provisioning fallback. */
 function isUnder18(dob: string): boolean {
   const birth = new Date(dob);
@@ -78,11 +103,9 @@ function isUnder18(dob: string): boolean {
   const eighteenth = new Date(birth.getFullYear() + 18, birth.getMonth(), birth.getDate());
   return Date.now() < eighteenth.getTime();
 }
-/**
- * Client-side provisioning used only when the createAccount callable is not
- * deployed. Firestore rules pin every server-owned field to a safe default, so
- * this path can never self-verify, self-grant a boost, or expose a youth profile.
- */
+
+let canUseServerProvisioning = import.meta.env.VITE_SERVER_PROVISIONING === 'true';
+
 async function provisionSelf(
   uid: string,
   email: string,
@@ -119,9 +142,6 @@ async function provisionSelf(
       playingLevel: extra.playingLevel ?? null,
       region: extra.region ?? null,
       availability: extra.availability ?? [],
-      // Denormalised so the guardian read rule (`guardianEmail == token.email`)
-      // can match without a join. Without this the guardian portal can never
-      // resolve its linked youth.
       guardianEmail: isYouth ? (extra.guardianEmail ?? '').toLowerCase().trim() : null,
       guardianName: isYouth ? (extra.guardianName ?? '') : null,
       createdAt: serverTimestamp(),
@@ -179,8 +199,10 @@ async function provisionSelf(
     updatedAt: serverTimestamp(),
   });
 }
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [role, setRole] = useState<Role | null>(null);
+  const [adminFlags, setAdminFlags] = useState<AdminFlags>(EMPTY_ADMIN_FLAGS);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<AppUser | null>(null);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
@@ -191,6 +213,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (!fbUser) {
         setFirebaseUser(null);
         setRole(null);
+        setAdminFlags(EMPTY_ADMIN_FLAGS);
         setUser(null);
         setIsAuthenticated(false);
         clearActiveSession();
@@ -206,11 +229,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           getDoc(doc(db, 'users', fbUser.uid)).catch(() => null),
         ]);
 
-        const claimRole = normaliseRole(tokenResult?.claims?.role);
         const profile = userSnap?.exists() ? userSnap.data() : {};
-        // Custom claims are authoritative. The Firestore document is only a fallback
-        // for accounts created before claims were provisioned.
-        const resolvedRole: Role = claimRole ?? normaliseRole(profile.role) ?? 'player';
+        if (profile.disabled === true || profile.suspended === true) {
+          await firebaseSignOut(auth);
+          setFirebaseUser(null);
+          setRole(null);
+          setAdminFlags(EMPTY_ADMIN_FLAGS);
+          setUser(null);
+          setIsAuthenticated(false);
+          clearActiveSession();
+          setLoading(false);
+          return;
+        }
+
+        const claimRole = normaliseRole(tokenResult?.claims?.role);
+        const flags = extractAdminFlags(tokenResult?.claims as Record<string, unknown> | undefined);
+
+        // Custom claims are authoritative. Never grant `admin` from a Firestore
+        // document alone; non-privileged roles fall back safely for Spark-plan accounts.
+        const docRole = normaliseRole(profile.role);
+        const resolvedRole: Role =
+          claimRole ?? (docRole && docRole !== 'admin' ? docRole : 'player');
+
         const displayName =
           (profile.name as string | undefined) ?? fbUser.displayName ?? fbUser.email ?? 'Member';
 
@@ -222,10 +262,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           name: displayName,
           role: resolvedRole,
           claimsRole: claimRole,
+          adminFlags: flags,
+          isSuperAdmin: flags.isSuperAdmin,
+          isModerator: flags.isModerator,
+          isSafeguardingAdmin: flags.isSafeguardingAdmin,
+          isFinanceAdmin: flags.isFinanceAdmin,
           photoUrl: (profile.photoUrl as string | undefined) ?? fbUser.photoURL ?? undefined,
         };
 
         setRole(resolvedRole);
+        setAdminFlags(flags);
         setUser(appUser);
         setIsAuthenticated(true);
 
@@ -256,8 +302,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         });
       } catch (err) {
         console.error('Failed to resolve user profile', err);
-        // Fail closed: never grant a privileged role when the profile cannot be read.
         setRole('player');
+        setAdminFlags(EMPTY_ADMIN_FLAGS);
         setUser({
           uid: fbUser.uid,
           email: fbUser.email,
@@ -265,6 +311,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           name: fbUser.displayName ?? fbUser.email ?? 'Member',
           role: 'player',
           claimsRole: null,
+          adminFlags: EMPTY_ADMIN_FLAGS,
         });
         setIsAuthenticated(true);
       } finally {
@@ -284,21 +331,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     provider.setCustomParameters({ prompt: 'select_account' });
     const result = await signInWithPopup(auth, provider);
 
-    // Only create the profile document if it does not already exist. Role is never
-    // taken from the client for an existing account.
     const userRef = doc(db, 'users', result.user.uid);
     const existing = await getDoc(userRef);
     if (!existing.exists()) {
-      const safeRole: Role = fallbackRole === 'admin' ? 'player' : fallbackRole;
-      await setDoc(userRef, {
-        uid: result.user.uid,
-        email: result.user.email,
-        name: result.user.displayName ?? result.user.email ?? 'Member',
-        role: safeRole,
-        emailVerified: result.user.emailVerified,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      const safeRole: Exclude<Role, 'admin'> = fallbackRole === 'admin' ? 'player' : fallbackRole;
+      await provisionSelf(
+        result.user.uid,
+        result.user.email ?? '',
+        result.user.displayName ?? result.user.email ?? 'Member',
+        safeRole,
+        {},
+      );
     }
   };
 
@@ -318,12 +361,23 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       { uid: string; role: string; isYouth: boolean; clubCode?: string }
     >(functions, 'createAccount');
 
-    let provisionedServerSide = true;
-    try {
-      await createAccount({ email, password: pass, role: selectedRole, name, extra });
-    } catch (err) {
-      console.warn('[register] Cloud Function createAccount unavailable (Free Spark plan or CORS), using client provisioning:', err);
-      provisionedServerSide = false;
+    let provisionedServerSide = canUseServerProvisioning;
+    if (provisionedServerSide) {
+      try {
+        await createAccount({ email, password: pass, role: selectedRole, name, extra });
+      } catch (err) {
+        const code = (err as { code?: string })?.code ?? '';
+        if (code === 'already-exists') {
+          throw Object.assign(new Error('An account already exists with this email address.'), {
+            code: 'auth/email-already-in-use',
+          });
+        }
+        console.info(
+          '[register] Server-side account creation unavailable; using guarded client provisioning.',
+        );
+        canUseServerProvisioning = false;
+        provisionedServerSide = false;
+      }
     }
 
     if (!provisionedServerSide) {
@@ -331,21 +385,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       await provisionSelf(credential.user.uid, email, name, selectedRole, extra);
       await credential.user.getIdToken(true);
       if (!credential.user.emailVerified) {
-        sendEmailVerification(credential.user).catch(() => {
-          /* non-blocking: user can resend from the verify screen */
-        });
+        sendEmailVerification(credential.user).catch(() => undefined);
       }
       return;
     }
 
-    // Sign in with the freshly provisioned credentials so the client picks up claims.
     const credential = await signInWithEmailAndPassword(auth, email, pass);
     await credential.user.getIdToken(true);
 
     if (!credential.user.emailVerified) {
-      sendEmailVerification(credential.user).catch(() => {
-        /* non-blocking: user can resend from the verify screen */
-      });
+      sendEmailVerification(credential.user).catch(() => undefined);
     }
   };
 
@@ -366,15 +415,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (!auth.currentUser) return;
     const token = await auth.currentUser.getIdTokenResult(true);
     const nextRole = normaliseRole(token.claims.role);
+    const nextFlags = extractAdminFlags(token.claims as Record<string, unknown>);
     if (nextRole) {
       setRole(nextRole);
-      setUser((prev) => (prev ? { ...prev, role: nextRole, claimsRole: nextRole } : prev));
+      setAdminFlags(nextFlags);
+      setUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              role: nextRole,
+              claimsRole: nextRole,
+              adminFlags: nextFlags,
+              isSuperAdmin: nextFlags.isSuperAdmin,
+              isModerator: nextFlags.isModerator,
+              isSafeguardingAdmin: nextFlags.isSafeguardingAdmin,
+              isFinanceAdmin: nextFlags.isFinanceAdmin,
+            }
+          : prev,
+      );
     }
   };
 
   const value = useMemo(
     () => ({
       role,
+      adminFlags,
       isAuthenticated,
       user,
       firebaseUser,
@@ -387,7 +452,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       resendVerification,
       refreshClaims,
     }),
-    [role, isAuthenticated, user, firebaseUser, loading],
+    [role, adminFlags, isAuthenticated, user, firebaseUser, loading],
   );
 
   return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;

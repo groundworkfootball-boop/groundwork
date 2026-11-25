@@ -45,23 +45,23 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return signedIn() && (claimRole() == 'admin' || userDocRole() == 'admin');
+      return signedIn() && claimRole() == 'admin';
     }
 
     function isSuperAdmin() {
-      return signedIn() && (request.auth.token.isSuperAdmin == true || (exists(/databases/$(database)/documents/users/$(uid())) && get(/databases/$(database)/documents/users/$(uid())).data.isSuperAdmin == true));
+      return isAdmin() && request.auth.token.isSuperAdmin == true;
     }
 
     function isModerator() {
-      return isAdmin();
+      return isAdmin() && (request.auth.token.isSuperAdmin == true || request.auth.token.isModerator == true);
     }
 
     function isSafeguardingAdmin() {
-      return isAdmin();
+      return isAdmin() && (request.auth.token.isSuperAdmin == true || request.auth.token.isSafeguardingAdmin == true);
     }
 
     function isFinanceAdmin() {
-      return isAdmin();
+      return isAdmin() && (request.auth.token.isSuperAdmin == true || request.auth.token.isFinanceAdmin == true);
     }
 
     function isPlayer() {
@@ -502,8 +502,7 @@ service cloud.firestore {
     // Ã¢â€â‚¬Ã¢â€â‚¬ Audit logs (append-only) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     match /auditLogs/{logId} {
       allow read: if isAdmin();
-      allow create: if isAdmin();
-      allow update, delete: if false;
+      allow create, update, delete: if false;
     }
 
     // Ã¢â€â‚¬Ã¢â€â‚¬ GDPR requests Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -548,7 +547,7 @@ service cloud.firestore {
     // only an admin can advance it.
 
     match /subscriptionRequests/{requestId} {
-      allow read: if isOwner(request.resource.data.userId) || isFinanceAdmin();
+      allow read: if isOwner(resource.data.userId) || isFinanceAdmin();
       allow create: if signedIn()
         && request.resource.data.userId == uid()
         && request.resource.data.status == 'pending';
@@ -556,7 +555,7 @@ service cloud.firestore {
     }
 
     match /boostRequests/{requestId} {
-      allow read: if isOwner(request.resource.data.userId) || isFinanceAdmin();
+      allow read: if isOwner(resource.data.userId) || isFinanceAdmin();
       allow create: if signedIn()
         && request.resource.data.userId == uid()
         && request.resource.data.status == 'pending';
